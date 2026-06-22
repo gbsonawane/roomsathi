@@ -3,12 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from datetime import datetime, timedelta, timezone
 from backend.db.dependencies import get_db, get_current_user
-from backend.schemas.payment import BoostRequest, CreateOrderResponse
+from backend.schemas.payment import BoostRequest, CreateOrderResponse, BoostConfirmRequest
 from backend.schemas.listing import PRICING
 from backend.models.listing import Listing
 from backend.models.listing_boost import ListingBoost
 from backend.models.payment import Payment
-from backend.services.payment_service import create_razorpay_order
+from backend.services.payment_service import create_razorpay_order, verify_razorpay_signature
 from backend.core.config import settings
 from backend.core.exceptions import NotFoundError, ForbiddenError, BadRequestError
 
@@ -63,13 +63,29 @@ async def boost_listing(
 
 @router.post("/confirm")
 async def confirm_boost(
-    body: dict,
+    body: BoostConfirmRequest,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """Confirm boost payment and activate boost."""
-    listing_id = body.get("listing_id")
-    boost_days = body.get("boost_days", 7)
+    # Verify signature
+    valid = verify_razorpay_signature(
+        body.razorpay_order_id, body.razorpay_payment_id, body.razorpay_signature
+    )
+    if not valid:
+        raise BadRequestError("Payment verification failed")
+
+    # Update payment record
+    result = await db.execute(
+        select(Payment).where(Payment.razorpay_order_id == body.razorpay_order_id)
+    )
+    payment = result.scalar_one_or_none()
+    if payment:
+        payment.razorpay_payment_id = body.razorpay_payment_id
+        payment.status = "success"
+
+    listing_id = body.listing_id
+    boost_days = body.boost_days
 
     result = await db.execute(select(Listing).where(Listing.id == listing_id))
     listing = result.scalar_one_or_none()

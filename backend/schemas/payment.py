@@ -46,3 +46,11 @@ class CreateOrderResponse(BaseModel):
 
 class PlanOrderRequest(BaseModel):
     plan_type: str  # standard | premium
+
+
+class BoostConfirmRequest(BaseModel):
+    listing_id: str
+    boost_days: int
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str

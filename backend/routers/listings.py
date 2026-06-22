@@ -8,6 +8,7 @@ from backend.services.listing_service import (
     update_listing, delete_listing, record_view,
 )
 from backend.services.storage_service import save_photo
+from backend.core.exceptions import BadRequestError
 import uuid
 
 router = APIRouter(prefix="/listings", tags=["listings"])
@@ -118,8 +119,26 @@ async def upload_photos(
     """Upload listing photos. Returns list of URLs."""
     urls = []
     listing_id = uuid.uuid4().hex[:12]
+    
+    # Allowed mime types and extensions
+    allowed_types = ["image/jpeg", "image/png", "image/webp"]
+    allowed_exts = [".jpg", ".jpeg", ".png", ".webp"]
+    
     for file in files:
+        # Check size (5MB = 5 * 1024 * 1024 bytes)
         content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise BadRequestError(f"File {file.filename} is larger than the 5MB size limit")
+            
+        content_type = file.content_type or ""
+        filename = (file.filename or "").lower()
+        is_valid_type = (
+            content_type in allowed_types or
+            any(filename.endswith(ext) for ext in allowed_exts)
+        )
+        if not is_valid_type:
+            raise BadRequestError(f"File {file.filename} must be a JPEG, PNG, or WebP image")
+            
         url = await save_photo(content, file.filename, listing_id)
         urls.append(url)
     return {"urls": urls}

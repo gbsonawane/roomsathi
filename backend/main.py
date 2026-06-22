@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 
+async def reset_daily_contacts():
+    """Reset contacts_used_today to 0 for all users at midnight."""
+    from backend.db.database import AsyncSessionLocal
+    from backend.models.user import User
+    from sqlalchemy import update
+
+    async with AsyncSessionLocal() as db:
+        try:
+            await db.execute(
+                update(User).values(contacts_used_today=0)
+            )
+            await db.commit()
+            logger.info("Successfully reset contacts_used_today for all users.")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to reset contacts_used_today: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
@@ -24,6 +42,7 @@ async def lifespan(app: FastAPI):
     # Serverless platforms like Vercel do not preserve process lifetime.
     if os.getenv("VERCEL") != "1":
         scheduler.add_job(expire_old_listings, "cron", hour=0, minute=0, id="expire_listings")
+        scheduler.add_job(reset_daily_contacts, "cron", hour=0, minute=0, id="reset_contacts")
         scheduler.start()
         logger.info("🚀 RoomSathi API started. Scheduler running.")
     else:

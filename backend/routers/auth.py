@@ -1,3 +1,4 @@
+import logging
 import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,8 @@ from backend.db.dependencies import get_db
 from backend.core.security import generate_otp, create_access_token
 from backend.schemas.auth import SendOTPRequest, VerifyOTPRequest, TokenResponse, UserBrief
 from backend.services.auth_service import send_otp_sms, save_otp, verify_otp_code, get_or_create_user, send_otp_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=get_remote_address)
@@ -50,9 +53,7 @@ async def send_otp(request: Request, body: SendOTPRequest, db: AsyncSession = De
             return {"message": "OTP sent", "dev_otp": otp}
         return {"message": "OTP sent"}
     except Exception as e:
-        import traceback
-        with open("error.log", "w") as f:
-            f.write(traceback.format_exc())
+        logger.exception("Failed to send OTP")
         raise HTTPException(status_code=500, detail=str(e))
 
 

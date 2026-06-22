@@ -123,7 +123,7 @@ export async function getSavedListings(token) {
 }
 
 export async function getOwnerListings(token) {
-  return request("/listings/owner", { token });
+  return request("/listings?owner=me", { token });
 }
 
 export async function unlockContact(listingId, unlockType, token) {

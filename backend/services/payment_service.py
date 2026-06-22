@@ -44,12 +44,12 @@ def verify_razorpay_signature(order_id: str, payment_id: str, signature: str) ->
 
     try:
         message = f"{order_id}|{payment_id}"
-        expected = hmac.new(
+        expected = hmac.HMAC(
             settings.RAZORPAY_KEY_SECRET.encode(),
             message.encode(),
             hashlib.sha256,
         ).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        return hmac.compare_digest(expected, str(signature))
     except Exception as e:
         logger.error(f"Razorpay signature verification failed: {e}")
         return False
