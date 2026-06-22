@@ -1,10 +1,14 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+from pydantic import model_validator
 
 
 class Settings(BaseSettings):
+    ENVIRONMENT: str = "development"
+    ALLOWED_ORIGINS: str = "http://localhost:3000"
+
     DATABASE_URL: str = "postgresql+asyncpg://postgres:root123@localhost:5432/roomsathi_db"
-    SECRET_KEY: str = "roomsathi_super_secret_jwt_key_change_in_production_2024"
+    SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
@@ -42,6 +46,14 @@ class Settings(BaseSettings):
     FASTAPI_URL: str = "http://localhost:8000"
 
     UPLOAD_DIR: str = "./uploads"
+
+    @model_validator(mode="after")
+    def validate_secret_key(self) -> 'Settings':
+        if self.ENVIRONMENT != "development" and not self.SECRET_KEY:
+            raise ValueError("SECRET_KEY must be set in production environment")
+        if not self.SECRET_KEY:
+            self.SECRET_KEY = "roomsathi_super_secret_jwt_key_change_in_production_2024"
+        return self
 
     class Config:
         env_file = ".env"

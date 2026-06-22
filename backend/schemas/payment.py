@@ -42,3 +42,7 @@ class CreateOrderResponse(BaseModel):
     amount: int
     currency: str
     key_id: str
+
+
+class PlanOrderRequest(BaseModel):
+    plan_type: str  # standard | premium

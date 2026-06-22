@@ -24,9 +24,10 @@ textarea {
 }
 
 .container {
-  max-width: 1080px;
+  width: 100%;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 4%;
 }
 
 .card {
@@ -56,8 +57,23 @@ button.primary {
   color: white;
   border: none;
   border-radius: 999px;
-  padding: 12px 20px;
+  padding: 12px 24px;
   cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+button.primary:hover {
+  background: #047857;
+}
+
+button.primary:active {
+  transform: scale(0.97);
+}
+
+button.primary:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
 }
 
 button.outline {
@@ -65,8 +81,24 @@ button.outline {
   color: #065f46;
   border: 1px solid #065f46;
   border-radius: 999px;
-  padding: 12px 20px;
+  padding: 12px 24px;
   cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease, transform 0.15s ease;
+}
+
+button.outline:hover {
+  background: #ecfdf5;
+}
+
+button.outline:active {
+  transform: scale(0.97);
+}
+
+button.outline:disabled {
+  border-color: #d1d5db;
+  color: #9ca3af;
+  cursor: not-allowed;
 }
 
 input,

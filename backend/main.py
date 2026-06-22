@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from backend.core.config import settings
 from backend.routers import auth, listings, users, unlock, boost, saved, payments, webhooks
 from backend.services.listing_service import expire_old_listings
 
@@ -45,13 +46,27 @@ app = FastAPI(
 )
 
 # CORS
+origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
+from backend.routers.auth import limiter
+
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def custom_rate_limit_exceeded_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many OTP requests. Please wait 10 minutes."},
+    )
 
 # Mount uploads directory for serving photos
 uploads_dir = Path("./uploads")

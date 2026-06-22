@@ -14,6 +14,41 @@ from backend.core.exceptions import NotFoundError, ForbiddenError
 
 async def create_listing(db: AsyncSession, data: ListingCreate, owner_id: uuid.UUID) -> Listing:
     """Create a new listing."""
+    # Verify payment if plan is not basic
+    if data.listing_plan in ("standard", "premium"):
+        if not data.razorpay_order_id or not data.razorpay_payment_id or not data.razorpay_signature:
+            from backend.core.exceptions import BadRequestError
+            raise BadRequestError("Payment details are required for standard or premium plan")
+        
+        from backend.services.payment_service import verify_razorpay_signature
+        valid = verify_razorpay_signature(
+            data.razorpay_order_id, data.razorpay_payment_id, data.razorpay_signature
+        )
+        if not valid:
+            from backend.core.exceptions import BadRequestError
+            raise BadRequestError("Payment verification failed")
+        
+        # Save payment as success
+        from backend.models.payment import Payment
+        result = await db.execute(
+            select(Payment).where(Payment.razorpay_order_id == data.razorpay_order_id)
+        )
+        payment = result.scalar_one_or_none()
+        if payment:
+            payment.razorpay_payment_id = data.razorpay_payment_id
+            payment.status = "success"
+        else:
+            amount = 199 if data.listing_plan == "standard" else 399
+            payment = Payment(
+                user_id=owner_id,
+                payment_type=f"listing_{data.listing_plan}",
+                amount=amount,
+                razorpay_order_id=data.razorpay_order_id,
+                razorpay_payment_id=data.razorpay_payment_id,
+                status="success",
+            )
+            db.add(payment)
+
     # Auto-generate title if not provided
     title = data.title
     if not title:
@@ -27,10 +62,14 @@ async def create_listing(db: AsyncSession, data: ListingCreate, owner_id: uuid.U
             "hostel": "Hostel",
         }
         type_label = type_labels.get(data.property_type, data.property_type)
-        title = f"{type_label} in {data.area}, {data.city}"
+        if data.listing_type == "roommate_needed":
+            title = f"Roommate needed ({type_label}) in {data.area}, {data.city}"
+        else:
+            title = f"{type_label} in {data.area}, {data.city}"
 
     listing = Listing(
         owner_id=owner_id,
+        listing_type=data.listing_type,
         title=title,
         property_type=data.property_type,
         gender_preference=data.gender_preference,
@@ -117,6 +156,7 @@ async def get_listing(
     return {
         "id": listing.id,
         "owner_id": listing.owner_id,
+        "listing_type": listing.listing_type,
         "title": listing.title,
         "property_type": listing.property_type,
         "gender_preference": listing.gender_preference,
@@ -157,6 +197,8 @@ async def get_listings(
     """Get listings with filters, sorting, and pagination."""
     query = select(Listing).where(Listing.is_active == True)
 
+    if filters.listing_type and filters.listing_type != "both":
+        query = query.where(Listing.listing_type == filters.listing_type)
     if filters.city:
         query = query.where(func.lower(Listing.city) == filters.city.lower())
     if filters.area:
@@ -189,21 +231,29 @@ async def get_listings(
     result = await db.execute(query)
     listings = result.scalars().all()
 
+    # Pre-fetch all saved listing IDs for the viewer to avoid N+1 query issue
+    saved_listing_ids = set()
+    if viewer_id and listings:
+        listing_ids = [l.id for l in listings]
+        save_result = await db.execute(
+            select(SavedListing.listing_id).where(
+                and_(
+                    SavedListing.user_id == viewer_id,
+                    SavedListing.listing_id.in_(listing_ids)
+                )
+            )
+        )
+        saved_listing_ids = set(save_result.scalars().all())
+
     # Build response list
     response = []
     for listing in listings:
-        is_saved = False
-        if viewer_id:
-            save_result = await db.execute(
-                select(SavedListing).where(
-                    and_(SavedListing.user_id == viewer_id, SavedListing.listing_id == listing.id)
-                )
-            )
-            is_saved = save_result.scalar_one_or_none() is not None
+        is_saved = listing.id in saved_listing_ids
 
         response.append({
             "id": listing.id,
             "owner_id": listing.owner_id,
+            "listing_type": listing.listing_type,
             "title": listing.title,
             "property_type": listing.property_type,
             "gender_preference": listing.gender_preference,
@@ -251,6 +301,7 @@ async def get_owner_listings(db: AsyncSession, owner_id: uuid.UUID) -> List[dict
         response.append({
             "id": listing.id,
             "owner_id": listing.owner_id,
+            "listing_type": listing.listing_type,
             "title": listing.title,
             "property_type": listing.property_type,
             "gender_preference": listing.gender_preference,

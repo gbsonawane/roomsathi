@@ -15,6 +15,7 @@ router = APIRouter(prefix="/listings", tags=["listings"])
 
 @router.get("/", response_model=List[ListingResponse])
 async def list_listings(
+    listing_type: Optional[str] = None,
     city: Optional[str] = None,
     area: Optional[str] = None,
     property_type: Optional[str] = None,
@@ -36,6 +37,7 @@ async def list_listings(
         return await get_owner_listings(db, current_user.id)
 
     filters = SearchFilters(
+        listing_type=listing_type,
         city=city,
         area=area,
         property_type=property_type.split(",") if property_type else None,

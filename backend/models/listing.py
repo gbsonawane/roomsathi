@@ -12,6 +12,7 @@ class Listing(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    listing_type = Column(String(20), nullable=False, default="room_available")
 
     title = Column(Text, nullable=True)
     property_type = Column(String(30), nullable=False)

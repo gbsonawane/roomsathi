@@ -5,6 +5,11 @@ from datetime import date, datetime
 import uuid
 
 
+class ListingType(str, Enum):
+    room_available = "room_available"
+    roommate_needed = "roommate_needed"
+
+
 class PropertyType(str, Enum):
     shared_room = "shared_room"
     one_rk = "1rk"
@@ -42,6 +47,7 @@ class ListingPlan(str, Enum):
 
 
 class ListingCreate(BaseModel):
+    listing_type: ListingType = ListingType.room_available
     property_type: PropertyType
     gender_preference: GenderPreference = GenderPreference.any
     furnishing: Furnishing = Furnishing.unfurnished
@@ -59,9 +65,13 @@ class ListingCreate(BaseModel):
     photos: List[str] = []
     listing_plan: ListingPlan = ListingPlan.basic
     title: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    razorpay_signature: Optional[str] = None
 
 
 class ListingUpdate(BaseModel):
+    listing_type: Optional[ListingType] = None
     title: Optional[str] = None
     property_type: Optional[PropertyType] = None
     gender_preference: Optional[GenderPreference] = None
@@ -82,6 +92,7 @@ class ListingUpdate(BaseModel):
 class ListingResponse(BaseModel):
     id: uuid.UUID
     owner_id: uuid.UUID
+    listing_type: str = "room_available"
     title: Optional[str] = None
     property_type: str
     gender_preference: str
@@ -119,6 +130,7 @@ class ListingResponse(BaseModel):
 
 
 class SearchFilters(BaseModel):
+    listing_type: Optional[str] = None
     city: Optional[str] = None
     area: Optional[str] = None
     property_type: Optional[List[str]] = None
