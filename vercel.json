@@ -1,8 +1,12 @@
 {
-  "version": 3,
+  "version": 2,
+  "regions": [
+    "sin1"
+  ],
   "functions": {
-    "api/*.py": {
-      "runtime": "python3.12"
+    "api/index.py": {
+      "runtime": "python3.12",
+      "maxDuration": 30
     }
   },
   "routes": [
