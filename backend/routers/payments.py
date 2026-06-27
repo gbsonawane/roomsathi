@@ -4,7 +4,7 @@ from sqlalchemy import select
 from backend.db.dependencies import get_db, get_current_user
 from backend.models.payment import Payment
 from backend.schemas.payment import PaymentResponse, PlanOrderRequest, CreateOrderResponse
-from typing import List
+from typing import List, Optional
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -64,3 +64,52 @@ async def create_plan_order(
         "currency": "INR",
         "key_id": settings.RAZORPAY_KEY_ID,
     }
+
+
+@router.get("/all")
+async def get_all_payments(
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get all payments (admin only)."""
+    from fastapi import HTTPException
+    from sqlalchemy import func as sa_func
+    from backend.models.user import User
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Build query with user join
+    query = (
+        select(Payment, User)
+        .join(User, Payment.user_id == User.id)
+        .order_by(Payment.created_at.desc())
+        .limit(500)
+    )
+    if status:
+        query = query.where(Payment.status == status)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    # Total revenue from successful payments
+    rev_result = await db.execute(
+        select(sa_func.sum(Payment.amount)).where(Payment.status == "success")
+    )
+    total_revenue = rev_result.scalar() or 0
+
+    payments_data = []
+    for payment, user in rows:
+        payments_data.append({
+            "id": str(payment.id),
+            "user_id": str(payment.user_id),
+            "user_name": user.full_name if user else "Unknown",
+            "payment_type": payment.payment_type,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "status": payment.status,
+            "created_at": payment.created_at.isoformat() if payment.created_at else None,
+        })
+
+    return {"payments": payments_data, "total_revenue": total_revenue}

@@ -24,10 +24,10 @@ export function AuthProvider({ children }) {
     }
 
     setToken(storedToken);
+    // Optimistically set the cached user so the UI renders immediately,
+    // but ALWAYS re-fetch /me from the server to get the latest role.
     if (storedUser) {
       setUser(storedUser);
-      setLoading(false);
-      return;
     }
 
     getMe(storedToken)

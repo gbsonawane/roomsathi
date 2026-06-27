@@ -87,6 +87,7 @@ async def create_listing(db: AsyncSession, data: ListingCreate, owner_id: uuid.U
         description=data.description,
         photos=data.photos or [],
         listing_plan=data.listing_plan,
+        status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
     db.add(listing)
@@ -195,7 +196,7 @@ async def get_listings(
     db: AsyncSession, filters: SearchFilters, viewer_id: Optional[uuid.UUID] = None
 ) -> List[dict]:
     """Get listings with filters, sorting, and pagination."""
-    query = select(Listing).where(Listing.is_active == True)
+    query = select(Listing).where(and_(Listing.is_active == True, Listing.status == "approved"))
 
     if filters.listing_type and filters.listing_type != "both":
         query = query.where(Listing.listing_type == filters.listing_type)
@@ -376,6 +377,81 @@ async def record_view(db: AsyncSession, listing_id: str, viewer_id: Optional[uui
         update(Listing).where(Listing.id == listing_id).values(view_count=Listing.view_count + 1)
     )
     await db.flush()
+
+
+async def get_pending_listings(db: AsyncSession) -> List[dict]:
+    """Get all listings with status=pending (admin only)."""
+    result = await db.execute(
+        select(Listing, User)
+        .join(User, Listing.owner_id == User.id)
+        .where(Listing.status == "pending")
+        .order_by(desc(Listing.created_at))
+    )
+    rows = result.all()
+    response = []
+    for listing, owner in rows:
+        response.append({
+            "id": listing.id,
+            "owner_id": listing.owner_id,
+            "listing_type": listing.listing_type,
+            "title": listing.title,
+            "property_type": listing.property_type,
+            "gender_preference": listing.gender_preference,
+            "furnishing": listing.furnishing,
+            "floor": listing.floor,
+            "parking": listing.parking,
+            "city": listing.city,
+            "area": listing.area,
+            "full_address": listing.full_address,
+            "latitude": float(listing.latitude) if listing.latitude else None,
+            "longitude": float(listing.longitude) if listing.longitude else None,
+            "rent": listing.rent,
+            "deposit": listing.deposit,
+            "available_from": listing.available_from,
+            "description": listing.description,
+            "photos": listing.photos or [],
+            "listing_plan": listing.listing_plan,
+            "is_boosted": listing.is_boosted,
+            "boost_expires_at": listing.boost_expires_at,
+            "is_active": listing.is_active,
+            "is_verified": listing.is_verified,
+            "status": listing.status,
+            "expires_at": listing.expires_at,
+            "view_count": listing.view_count,
+            "unlock_count": listing.unlock_count,
+            "save_count": listing.save_count,
+            "created_at": listing.created_at,
+            "updated_at": listing.updated_at,
+            "is_saved": None,
+            "is_unlocked": None,
+            "owner_name": owner.full_name if owner else None,
+            "owner_phone": None,
+        })
+    return response
+
+
+async def approve_listing(db: AsyncSession, listing_id: str) -> dict:
+    """Approve a listing (admin only)."""
+    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    listing = result.scalar_one_or_none()
+    if not listing:
+        raise NotFoundError("Listing not found")
+    listing.status = "approved"
+    await db.flush()
+    await db.refresh(listing)
+    return {"id": listing.id, "status": listing.status}
+
+
+async def reject_listing(db: AsyncSession, listing_id: str) -> dict:
+    """Reject a listing (admin only)."""
+    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    listing = result.scalar_one_or_none()
+    if not listing:
+        raise NotFoundError("Listing not found")
+    listing.status = "rejected"
+    await db.flush()
+    await db.refresh(listing)
+    return {"id": listing.id, "status": listing.status}
 
 
 async def expire_old_listings():

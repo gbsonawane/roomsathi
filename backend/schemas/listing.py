@@ -112,6 +112,7 @@ class ListingResponse(BaseModel):
     listing_plan: str
     is_boosted: bool = False
     boost_expires_at: Optional[datetime] = None
+    status: str = "pending"
     is_active: bool = True
     is_verified: bool = False
     expires_at: Optional[datetime] = None

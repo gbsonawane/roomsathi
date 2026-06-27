@@ -12,12 +12,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Where to go after login (supports ?next=/admin etc.)
+  const nextUrl = router.query.next || "/home";
+
   // Redirect if already logged in
   useEffect(() => {
     if (!loading && user) {
-      router.replace("/home");
+      router.replace(nextUrl);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, nextUrl]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,7 +39,7 @@ export default function LoginPage() {
       // Authenticate via devLogin API under the hood
       const auth = await devLogin(email.trim(), email.split("@")[0]);
       await login(auth);
-      router.push("/home");
+      router.push(nextUrl);
     } catch (err) {
       setError(err.message || "Failed to sign in. Please try again.");
     } finally {

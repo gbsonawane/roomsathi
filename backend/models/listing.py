@@ -37,6 +37,7 @@ class Listing(Base):
     listing_plan = Column(String(20), nullable=False, default="basic")
     is_boosted = Column(Boolean, default=False)
     boost_expires_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), default="pending")  # pending | approved | rejected
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=True)

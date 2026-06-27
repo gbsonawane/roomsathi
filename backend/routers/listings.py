@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.dependencies import get_db, get_current_user, get_current_user_optional
@@ -6,6 +6,7 @@ from backend.schemas.listing import ListingCreate, ListingResponse, SearchFilter
 from backend.services.listing_service import (
     create_listing, get_listing, get_listings, get_owner_listings,
     update_listing, delete_listing, record_view,
+    get_pending_listings, approve_listing, reject_listing,
 )
 from backend.services.storage_service import save_photo
 from backend.core.exceptions import BadRequestError
@@ -29,6 +30,7 @@ async def list_listings(
     page: int = 1,
     page_size: int = 12,
     owner: Optional[str] = None,
+    status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
@@ -36,6 +38,10 @@ async def list_listings(
     # If owner=me, return owner's listings
     if owner == "me" and current_user:
         return await get_owner_listings(db, current_user.id)
+
+    # Admin-only: return pending listings
+    if status == "pending" and current_user and current_user.role == "admin":
+        return await get_pending_listings(db)
 
     filters = SearchFilters(
         listing_type=listing_type,
@@ -142,3 +148,38 @@ async def upload_photos(
         url = await save_photo(content, file.filename, listing_id)
         urls.append(url)
     return {"urls": urls}
+
+
+@router.get("/pending", response_model=List[ListingResponse])
+async def list_pending_listings(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get all pending listings (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return await get_pending_listings(db)
+
+
+@router.patch("/{listing_id}/approve")
+async def approve_listing_route(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Approve a listing (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return await approve_listing(db, listing_id)
+
+
+@router.patch("/{listing_id}/reject")
+async def reject_listing_route(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Reject a listing (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return await reject_listing(db, listing_id)

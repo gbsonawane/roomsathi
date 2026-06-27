@@ -16,6 +16,7 @@ class User(Base):
     avatar_url = Column(Text, nullable=True)
     hashed_password = Column(Text, nullable=True)
     role = Column(String(20), nullable=False, default="seeker")  # seeker | owner | admin
+    is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     aadhar_verified = Column(Boolean, default=False)
     plan_type = Column(String(20), default="free")  # free | monthly
