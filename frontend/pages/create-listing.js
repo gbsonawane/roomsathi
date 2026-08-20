@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
 import RazorpayModal from "../components/RazorpayModal";
-import { createListing, uploadPhotos, createPlanOrder } from "../lib/api";
+import { createListing, uploadPhotos, createPlanOrder, generateDescription, generateTitle } from "../lib/api";
 
 const PUNE_AREAS = [
   "Kothrud", "Kalyani Nagar", "Viman Nagar", "Baner", "Hinjawadi", 
@@ -47,6 +47,7 @@ export default function CreateListing() {
   };
   const [availableFrom, setAvailableFrom] = useState(getTomorrowString());
 
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   
   // Photo states
@@ -63,6 +64,14 @@ export default function CreateListing() {
   const [success, setSuccess] = useState(false);
   const [createdListingId, setCreatedListingId] = useState(null);
 
+  // AI description generation state
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  // AI title generation state
+  const [aiTitleGenerating, setAiTitleGenerating] = useState(false);
+  const [aiTitleError, setAiTitleError] = useState("");
+
   // Filter area suggestions
   useEffect(() => {
     if (area.length > 1) {
@@ -74,6 +83,55 @@ export default function CreateListing() {
       setAreaSuggestions([]);
     }
   }, [area]);
+
+  // Handle AI description generation
+  const handleGenerateDescription = async () => {
+    setAiGenerating(true);
+    setAiError("");
+    try {
+      const payload = {
+        property_type: propertyType,
+        listing_type: listingType,
+        city,
+        area,
+        rent,
+        deposit,
+        furnishing,
+        parking,
+        floor,
+        gender_preference: genderPreference,
+        available_from: availableFrom,
+      };
+      const res = await generateDescription(payload, token);
+      setDescription(res.description);
+    } catch (err) {
+      setAiError("Could not generate. Try again.");
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  // Handle AI title generation
+  const handleGenerateTitle = async () => {
+    setAiTitleGenerating(true);
+    setAiTitleError("");
+    try {
+      const payload = {
+        property_type: propertyType,
+        listing_type: listingType,
+        city,
+        area,
+        furnishing,
+        gender_preference: genderPreference,
+      };
+      const res = await generateTitle(payload, token);
+      setTitle(res.title);
+    } catch (err) {
+      setAiTitleError("Could not generate. Try again.");
+    } finally {
+      setAiTitleGenerating(false);
+    }
+  };
 
   if (loading || !user) {
     return (
@@ -148,6 +206,7 @@ export default function CreateListing() {
       rent: parseInt(rent),
       deposit: parseInt(deposit),
       available_from: availableFrom,
+      title: title || null,
       description: description,
       photos: photos,
       listing_plan: selectedPlan,
@@ -339,6 +398,32 @@ export default function CreateListing() {
                   </ul>
                 )}
               </div>
+
+              <div className="input-group" style={{ marginTop: "20px" }}>
+                <div className="description-label-row">
+                  <label htmlFor="listingTitle">Listing Title (Optional)</label>
+                  <button
+                    id="ai-title-generate-btn"
+                    type="button"
+                    className="ai-generate-btn"
+                    onClick={handleGenerateTitle}
+                    disabled={aiTitleGenerating}
+                  >
+                    {aiTitleGenerating ? "⏳ Generating..." : "✨ Auto-generate"}
+                  </button>
+                </div>
+                {aiTitleError && (
+                  <div className="ai-error-msg">{aiTitleError}</div>
+                )}
+                <input
+                  id="listingTitle"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. 1BHK in Kothrud, Pune — Fully Furnished"
+                  maxLength={100}
+                />
+              </div>
             </div>
           )}
 
@@ -450,7 +535,21 @@ export default function CreateListing() {
               <p className="subtitle">Write a brief description detailing flat features, house rules, flatmates info, etc.</p>
 
               <div className="input-group">
-                <label htmlFor="description">Description (Min 30 chars)</label>
+                <div className="description-label-row">
+                  <label htmlFor="description">Description (Min 30 chars)</label>
+                  <button
+                    id="ai-generate-btn"
+                    type="button"
+                    className="ai-generate-btn"
+                    onClick={handleGenerateDescription}
+                    disabled={aiGenerating}
+                  >
+                    {aiGenerating ? "⏳ Generating..." : "✨ Auto-generate"}
+                  </button>
+                </div>
+                {aiError && (
+                  <div className="ai-error-msg">{aiError}</div>
+                )}
                 <textarea 
                   id="description"
                   value={description} 
@@ -891,6 +990,40 @@ export default function CreateListing() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(5px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        .description-label-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+        .description-label-row label {
+          margin-bottom: 0;
+        }
+        .ai-generate-btn {
+          font-size: 0.8rem;
+          font-weight: 600;
+          padding: 5px 12px;
+          border-radius: 8px;
+          border: 1px solid #065f46;
+          background: #ecfdf5;
+          color: #065f46;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+        .ai-generate-btn:hover:not(:disabled) {
+          background: #065f46;
+          color: white;
+        }
+        .ai-generate-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .ai-error-msg {
+          font-size: 0.82rem;
+          color: #b91c1c;
+          margin-bottom: 6px;
         }
       `}</style>
     </>

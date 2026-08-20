@@ -63,15 +63,11 @@ export async function validateAdminToken(token) {
  * Login via /auth/dev-login, verify admin role, store admin session.
  * Throws a string message on failure.
  */
-export async function adminLogin(email) {
-  const res = await fetch(`${API}/auth/dev-login`, {
+export async function adminLogin(email, password) {
+  const res = await fetch(`${API}/auth/admin-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      phone: email,          // backend accepts email in the phone field
-      otp: "000000",
-      full_name: email.split("@")[0],
-    }),
+    body: JSON.stringify({ email, password }),
   });
 
   const data = await res.json();

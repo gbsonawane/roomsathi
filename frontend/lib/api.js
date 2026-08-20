@@ -157,3 +157,19 @@ export async function confirmBoost(payload, token) {
     token,
   });
 }
+
+export async function generateDescription(data, token) {
+  return request("/listings/generate-description", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export async function generateTitle(data, token) {
+  return request("/listings/generate-title", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}

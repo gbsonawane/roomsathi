@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    ADMIN_SECRET_PASSWORD: str = ""  # loaded from .env
+
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""
@@ -42,6 +44,9 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = ""
+
+    # NVIDIA NIM / AI Settings
+    NVIDIA_API_KEY: str = ""
 
     APP_URL: str = "http://localhost:8501"
     FASTAPI_URL: str = "http://localhost:8000"

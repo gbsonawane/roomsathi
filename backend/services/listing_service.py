@@ -94,10 +94,10 @@ async def create_listing(db: AsyncSession, data: ListingCreate, owner_id: uuid.U
     await db.flush()
     await db.refresh(listing)
 
-    # Update owner role to 'owner' if still seeker
+    # Update owner role to 'owner' if still seeker or other basic user
     result = await db.execute(select(User).where(User.id == owner_id))
     owner = result.scalar_one_or_none()
-    if owner and owner.role == "seeker":
+    if owner and owner.role not in ("admin", "owner"):
         owner.role = "owner"
         await db.flush()
 

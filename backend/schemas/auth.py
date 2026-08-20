@@ -38,5 +38,10 @@ class GoogleAuthRequest(BaseModel):
     token: str  # Google ID token
 
 
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
 # Rebuild TokenResponse to resolve forward reference
 TokenResponse.model_rebuild()

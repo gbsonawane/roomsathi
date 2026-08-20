@@ -9,6 +9,7 @@ from backend.services.listing_service import (
     get_pending_listings, approve_listing, reject_listing,
 )
 from backend.services.storage_service import save_photo
+from backend.services import ai_service
 from backend.core.exceptions import BadRequestError
 import uuid
 
@@ -70,51 +71,6 @@ async def post_listing(
     """Create a new listing."""
     listing = await create_listing(db, body, owner_id=current_user.id)
     return await get_listing(db, str(listing.id), viewer_id=current_user.id)
-
-
-@router.get("/{listing_id}", response_model=ListingResponse)
-async def get_one(
-    listing_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user_optional),
-):
-    """Get a single listing by ID."""
-    viewer_id = current_user.id if current_user else None
-    return await get_listing(db, listing_id, viewer_id=viewer_id)
-
-
-@router.patch("/{listing_id}", response_model=ListingResponse)
-async def edit_listing(
-    listing_id: str,
-    body: dict,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    """Update a listing."""
-    return await update_listing(db, listing_id, body, owner_id=current_user.id)
-
-
-@router.delete("/{listing_id}")
-async def remove_listing(
-    listing_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    """Delete a listing."""
-    await delete_listing(db, listing_id, owner_id=current_user.id)
-    return {"message": "Deleted"}
-
-
-@router.post("/{listing_id}/view")
-async def track_view(
-    listing_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user_optional),
-):
-    """Record a view on a listing."""
-    viewer_id = current_user.id if current_user else None
-    await record_view(db, listing_id, viewer_id=viewer_id)
-    return {"message": "View recorded"}
 
 
 @router.post("/upload-photos")
@@ -183,3 +139,68 @@ async def reject_listing_route(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return await reject_listing(db, listing_id)
+
+
+@router.post("/generate-description")
+async def generate_description(
+    body: dict,
+    current_user=Depends(get_current_user),
+):
+    """Generate a listing description using AI based on form fields."""
+    description = await ai_service.generate_listing_description(body)
+    return {"description": description}
+
+
+@router.post("/generate-title")
+async def generate_title(
+    body: dict,
+    current_user=Depends(get_current_user),
+):
+    """Generate a short listing title using AI based on form fields."""
+    title = await ai_service.generate_listing_title(body)
+    return {"title": title}
+
+
+@router.get("/{listing_id}", response_model=ListingResponse)
+async def get_one(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    """Get a single listing by ID."""
+    viewer_id = current_user.id if current_user else None
+    return await get_listing(db, listing_id, viewer_id=viewer_id)
+
+
+@router.patch("/{listing_id}", response_model=ListingResponse)
+async def edit_listing(
+    listing_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Update a listing."""
+    return await update_listing(db, listing_id, body, owner_id=current_user.id)
+
+
+@router.delete("/{listing_id}")
+async def remove_listing(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Delete a listing."""
+    await delete_listing(db, listing_id, owner_id=current_user.id)
+    return {"message": "Deleted"}
+
+
+@router.post("/{listing_id}/view")
+async def track_view(
+    listing_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    """Record a view on a listing."""
+    viewer_id = current_user.id if current_user else None
+    await record_view(db, listing_id, viewer_id=viewer_id)
+    return {"message": "View recorded"}

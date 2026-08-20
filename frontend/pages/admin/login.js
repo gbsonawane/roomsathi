@@ -26,13 +26,12 @@ export default function AdminLoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    if (!email.trim()) { setError("Email is required."); return; }
-    if (!email.includes("@")) { setError("Enter a valid email address."); return; }
+    if (!email.trim()) { setError("Phone or Email is required."); return; }
     if (!password.trim()) { setError("Password is required."); return; }
 
     setSubmitting(true);
     try {
-      await adminLogin(email.trim());
+      await adminLogin(email.trim(), password);
       router.replace("/admin");
     } catch (err) {
       setError(err.message || "Authentication failed. Try again.");
@@ -122,17 +121,17 @@ export default function AdminLoginPage() {
             )}
 
             <div className="al-field">
-              <label htmlFor="admin-email">Admin Email</label>
+              <label htmlFor="admin-email">Phone or Email</label>
               <div className="al-input-wrap">
                 <svg className="al-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
                 </svg>
                 <input
                   id="admin-email"
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@roomsathi.com"
+                  placeholder="admin@roomsathi.com or 8600924307"
                   autoComplete="username"
                   required
                 />

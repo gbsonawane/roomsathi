@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect, text
 
 
 # revision identifiers
@@ -19,23 +20,47 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add status column to listings table
-    op.add_column(
-        'listings',
-        sa.Column('status', sa.String(length=20), nullable=False, server_default='pending')
-    )
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    
+    # Add status to listings only if it doesn't exist
+    listings_cols = [c['name'] for c in inspector.get_columns('listings')]
+    if 'status' not in listings_cols:
+        op.add_column(
+            'listings',
+            sa.Column('status', sa.String(length=20), nullable=False, server_default='pending')
+        )
+    
+    # Add is_active to users only if it doesn't exist  
+    users_cols = [c['name'] for c in inspector.get_columns('users')]
+    if 'is_active' not in users_cols:
+        op.add_column(
+            'users',
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true'))
+        )
+    
+    # Add role to users only if it doesn't exist
+    if 'role' not in users_cols:
+        op.add_column(
+            'users',
+            sa.Column('role', sa.String(length=20), nullable=False, server_default='seeker')
+        )
 
-    # Add is_active column to users table
-    op.add_column(
-        'users',
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true'))
-    )
-
-    # Create index on listing status for faster admin queries
-    op.create_index('idx_listings_status', 'listings', ['status'], unique=False)
-
+    # Create index only if it doesn't exist
+    indexes = [idx['name'] for idx in inspector.get_indexes('listings')]
+    if 'idx_listings_status' not in indexes:
+        op.create_index('idx_listings_status', 'listings', ['status'], unique=False)
 
 def downgrade() -> None:
-    op.drop_index('idx_listings_status', table_name='listings')
-    op.drop_column('listings', 'status')
-    op.drop_column('users', 'is_active')
+    try:
+        op.drop_index('idx_listings_status', table_name='listings')
+    except Exception:
+        pass
+    try:
+        op.drop_column('listings', 'status')
+    except Exception:
+        pass
+    try:
+        op.drop_column('users', 'is_active')
+    except Exception:
+        pass
