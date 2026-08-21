@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
-import { getListings } from "../lib/api";
+import { getListings, parseSearchQuery } from "../lib/api";
 import ListingCard from "../components/ListingCard";
 
 export default function SearchPage() {
@@ -18,6 +18,11 @@ export default function SearchPage() {
   const [maxRent, setMaxRent] = useState("");
   const [sortBy, setSortBy] = useState("newest"); // newest | rent_asc | rent_desc
 
+  // NL Search states
+  const [nlQuery, setNlQuery] = useState("");
+  const [nlParsing, setNlParsing] = useState(false);
+  const [nlError, setNlError] = useState("");
+
   // Listings & UI status
   const [listings, setListings] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -31,7 +36,7 @@ export default function SearchPage() {
   }, [user, loading]);
 
   const handlePropertyTypeToggle = (type) => {
-    setSelectedPropertyTypes(prev => 
+    setSelectedPropertyTypes(prev =>
       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
     );
   };
@@ -92,6 +97,46 @@ export default function SearchPage() {
     }, 50);
   };
 
+  async function handleNlSearch(queryToUse) {
+    const activeQuery = typeof queryToUse === "string" ? queryToUse : nlQuery;
+    if (!activeQuery.trim() || activeQuery.trim().length < 3) return;
+    setNlParsing(true);
+    setNlError("");
+    try {
+      const parsed = await parseSearchQuery(activeQuery, token);
+      if (!parsed || Object.keys(parsed).length === 0) {
+        setNlError("Couldn't understand that. Try: '2BHK in Hinjewadi under 15k'");
+        return;
+      }
+
+      // Apply each recognized key to the corresponding filter state:
+      if (parsed.city) setCity(parsed.city);
+      if (parsed.area) setArea(parsed.area);
+      if (parsed.listing_type) setListingType(parsed.listing_type);
+      if (parsed.property_type) setSelectedPropertyTypes([parsed.property_type]);
+
+      if (parsed.gender_preference) {
+        if (parsed.gender_preference === "boys") {
+          setGenderPreference("male");
+        } else if (parsed.gender_preference === "girls") {
+          setGenderPreference("female");
+        } else {
+          setGenderPreference(parsed.gender_preference);
+        }
+      }
+
+      if (parsed.min_rent) setMinRent(String(parsed.min_rent));
+      if (parsed.max_rent) setMaxRent(String(parsed.max_rent));
+
+      // Trigger search with the newly set filters after state settles
+      setTimeout(() => fetchResults(), 50);
+    } catch (err) {
+      setNlError("Search failed. Try again.");
+    } finally {
+      setNlParsing(false);
+    }
+  }
+
   if (loading || !user) {
     return (
       <div style={{ textAlign: "center", padding: "48px 0" }}>
@@ -112,8 +157,8 @@ export default function SearchPage() {
 
   return (
     <>
-    <div className="search-layout">
-        
+      <div className="search-layout">
+
         {/* Page Title */}
         <div style={{ marginBottom: "20px" }}>
           <h1 className="page-title">Find Rooms & Roommates</h1>
@@ -122,22 +167,89 @@ export default function SearchPage() {
           </p>
         </div>
 
+        {/* Natural Language Search bar section */}
+        <div className="card nl-search-card" style={{ marginBottom: "20px", padding: "20px" }}>
+          <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            ✨ Search naturally
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <input
+              type="text"
+              value={nlQuery}
+              onChange={(e) => {
+                setNlQuery(e.target.value);
+                if (nlError) setNlError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleNlSearch();
+                }
+              }}
+              placeholder="e.g. 2BHK near Hinjewadi under ₹15k for girls"
+              style={{ flexGrow: 1, padding: "10px 14px", borderRadius: "8px", border: "1px solid #d1d5db" }}
+            />
+            <button
+              type="button"
+              onClick={() => handleNlSearch()}
+              className="primary"
+              disabled={nlParsing}
+              style={{ minWidth: "110px", padding: "10px 20px", borderRadius: "8px", fontWeight: "600" }}
+            >
+              {nlParsing ? "Parsing..." : "✨ Search"}
+            </button>
+          </div>
+          {nlError && (
+            <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "6px" }}>
+              {nlError}
+            </div>
+          )}
+          <div className="chips-row">
+            <span style={{ fontSize: "12px", color: "#6b7280" }}>Try:</span>
+            {[
+              "furnished 1BHK in Baner",
+              "PG for girls in Wakad under 8k",
+              "roommate needed in Kothrud"
+            ].map(txt => (
+              <span
+                key={txt}
+                className="chip-pill"
+                onClick={() => {
+                  setNlQuery(txt);
+                  handleNlSearch(txt);
+                }}
+              >
+                {txt}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Divider with horizontal rule effect */}
+        <div style={{ display: "flex", alignItems: "center", margin: "20px 0 16px" }}>
+          <div style={{ flexGrow: 1, height: "1px", background: "#e5e7eb" }}></div>
+          <span style={{ padding: "0 16px", color: "#9ca3af", fontSize: "12px", fontWeight: "500", whiteSpace: "nowrap" }}>
+            — or use filters below —
+          </span>
+          <div style={{ flexGrow: 1, height: "1px", background: "#e5e7eb" }}></div>
+        </div>
+
         {/* Listing Type tabs selector */}
         <div className="listing-type-tabs">
-          <button 
-            className={`tab-btn ${listingType === "both" ? "active" : ""}`} 
+          <button
+            className={`tab-btn ${listingType === "both" ? "active" : ""}`}
             onClick={() => setListingType("both")}
           >
             All Listings
           </button>
-          <button 
-            className={`tab-btn ${listingType === "room_available" ? "active" : ""}`} 
+          <button
+            className={`tab-btn ${listingType === "room_available" ? "active" : ""}`}
             onClick={() => setListingType("room_available")}
           >
             🏠 Rooms Available
           </button>
-          <button 
-            className={`tab-btn ${listingType === "roommate_needed" ? "active" : ""}`} 
+          <button
+            className={`tab-btn ${listingType === "roommate_needed" ? "active" : ""}`}
             onClick={() => setListingType("roommate_needed")}
           >
             🤝 Roommates Needed
@@ -145,30 +257,30 @@ export default function SearchPage() {
         </div>
 
         <div className="search-grid-container">
-          
+
           {/* LEFT: Search Filters Card */}
           <aside className="filters-aside card">
             <form onSubmit={handleSearchSubmit}>
               <h3 style={{ margin: "0 0 16px", color: "#111827", fontSize: "1.1rem" }}>Filters</h3>
-              
+
               <div className="filter-group">
                 <label htmlFor="city">City</label>
-                <input 
+                <input
                   id="city"
-                  type="text" 
-                  value={city} 
-                  onChange={(e) => setCity(e.target.value)} 
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
                   placeholder="e.g. Pune"
                 />
               </div>
 
               <div className="filter-group">
                 <label htmlFor="area">Area / Locality</label>
-                <input 
+                <input
                   id="area"
-                  type="text" 
-                  value={area} 
-                  onChange={(e) => setArea(e.target.value)} 
+                  type="text"
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
                   placeholder="e.g. Kothrud, Baner"
                 />
               </div>
@@ -178,8 +290,8 @@ export default function SearchPage() {
                 <div className="checkbox-list">
                   {propertyTypes.map(t => (
                     <label key={t.value} className="checkbox-item">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={selectedPropertyTypes.includes(t.value)}
                         onChange={() => handlePropertyTypeToggle(t.value)}
                       />
@@ -191,9 +303,9 @@ export default function SearchPage() {
 
               <div className="filter-group">
                 <label htmlFor="genderPreference">Gender Preference</label>
-                <select 
+                <select
                   id="genderPreference"
-                  value={genderPreference} 
+                  value={genderPreference}
                   onChange={(e) => setGenderPreference(e.target.value)}
                 >
                   <option value="">Any</option>
@@ -206,18 +318,18 @@ export default function SearchPage() {
               <div className="filter-group">
                 <label>Rent Range (₹)</label>
                 <div style={{ display: "flex", gap: "8px" }}>
-                  <input 
-                    type="number" 
-                    value={minRent} 
-                    onChange={(e) => setMinRent(e.target.value)} 
-                    placeholder="Min" 
+                  <input
+                    type="number"
+                    value={minRent}
+                    onChange={(e) => setMinRent(e.target.value)}
+                    placeholder="Min"
                     style={{ padding: "8px 12px" }}
                   />
-                  <input 
-                    type="number" 
-                    value={maxRent} 
-                    onChange={(e) => setMaxRent(e.target.value)} 
-                    placeholder="Max" 
+                  <input
+                    type="number"
+                    value={maxRent}
+                    onChange={(e) => setMaxRent(e.target.value)}
+                    placeholder="Max"
                     style={{ padding: "8px 12px" }}
                   />
                 </div>
@@ -236,18 +348,18 @@ export default function SearchPage() {
 
           {/* RIGHT: Results List */}
           <main className="results-main">
-            
+
             {/* Sorting & Stats Bar */}
             <div className="results-header-row">
               <span className="results-count">
                 {searching ? "Searching listings..." : `${listings.length} listings found`}
               </span>
-              
+
               <div className="sort-selector">
                 <label htmlFor="sort-dropdown" style={{ margin: 0, fontWeight: 500, fontSize: "0.85rem", color: "#6b7280" }}>Sort by:</label>
-                <select 
+                <select
                   id="sort-dropdown"
-                  value={sortBy} 
+                  value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
                   style={{ width: "auto", padding: "6px 12px", fontSize: "0.85rem", borderRadius: "8px" }}
                 >
@@ -281,10 +393,10 @@ export default function SearchPage() {
             ) : listings.length > 0 ? (
               <div className="listings-grid">
                 {listings.map(listing => (
-                  <ListingCard 
-                    key={listing.id} 
-                    listing={listing} 
-                    token={token} 
+                  <ListingCard
+                    key={listing.id}
+                    listing={listing}
+                    token={token}
                   />
                 ))}
               </div>
@@ -478,6 +590,29 @@ export default function SearchPage() {
           0% { opacity: 0.6; }
           50% { opacity: 0.9; }
           100% { opacity: 0.6; }
+        }
+        .nl-search-card {
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);
+        }
+        .chips-row {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-top: 10px;
+          align-items: center;
+        }
+        .chip-pill {
+          background: #f3f4f6;
+          border-radius: 999px;
+          font-size: 12px;
+          padding: 4px 12px;
+          cursor: pointer;
+          color: #4b5563;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .chip-pill:hover {
+          background: #e5e7eb;
+          color: #111827;
         }
       `}</style>
     </>

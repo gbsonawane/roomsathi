@@ -181,3 +181,15 @@ export async function scoreDescription(data, token) {
     token,
   });
 }
+
+export async function parseSearchQuery(query, token) {
+  try {
+    return await request("/listings/parse-search", {
+      method: "POST",
+      body: { query },
+      token,
+    });
+  } catch (err) {
+    return {};
+  }
+}

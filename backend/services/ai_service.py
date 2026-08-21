@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 import httpx
 from fastapi import HTTPException
 from backend.core.config import settings
@@ -276,3 +277,185 @@ async def score_listing_description(description: str) -> dict:
     except Exception as exc:
         logger.warning("Error scoring description (non-critical): %s", str(exc))
         return _silent_fail
+
+
+SEARCH_PARSE_SYSTEM_PROMPT = """You are a search query parser for an Indian room rental platform called
+    RoomSathi. Extract search parameters from natural language queries.
+    Respond ONLY with a JSON object, no explanation, no markdown, no code fences.
+    Use exactly these keys (omit a key if not mentioned):
+    {
+      'city': string,
+      'area': string (locality name only, not city),
+      'listing_type': 'room_available' | 'roommate_needed',
+      'property_type': one of ['shared_room','1rk','1bhk','2bhk','3bhk','pg','hostel'],
+      'gender_preference': 'any' | 'boys' | 'girls' | 'family',
+      'min_rent': integer (monthly rent in INR),
+      'max_rent': integer (monthly rent in INR),
+      'furnishing': one of ['unfurnished','semi','fully'],
+      'parking': one of ['none','bike','car','both']
+    }
+    Examples:
+    Query: '2BHK near Hinjewadi under 15k girls only'
+    Output: {'area':'Hinjewadi','property_type':'2bhk','max_rent':15000,'gender_preference':'girls'}
+
+    Query: 'fully furnished 1rk in Kothrud Pune for boys with parking'
+    Output: {'city':'Pune','area':'Kothrud','property_type':'1rk','furnishing':'fully','gender_preference':'boys','parking':'bike'}
+
+    Query: 'looking for roommate in Baner under 8000'
+    Output: {'area':'Baner','listing_type':'roommate_needed','max_rent':8000}"""
+
+
+async def parse_search_query(query: str) -> dict:
+    """
+    Call NVIDIA NIM API to parse a natural language search query.
+    Returns: dict containing the parsed elements validated against schema.
+    """
+    _empty = {}
+
+    if not settings.NVIDIA_API_KEY:
+        logger.error("NVIDIA_API_KEY is not configured.")
+        return _empty
+
+    headers = {
+        "Authorization": f"Bearer {settings.NVIDIA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": NVIDIA_MODEL,
+        "messages": [
+            {"role": "system", "content": SEARCH_PARSE_SYSTEM_PROMPT},
+            {"role": "user", "content": query},
+        ],
+        "max_tokens": 200,
+        "temperature": 0.1,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(NVIDIA_NIM_URL, json=payload, headers=headers)
+
+        if response.status_code != 200:
+            logger.error(
+                "NVIDIA NIM API returned status %d: %s",
+                response.status_code,
+                response.text,
+            )
+            return _empty
+
+        data = response.json()
+        raw = data["choices"][0]["message"]["content"].strip()
+
+        # Strip potential markdown code fences if the model wraps in ```json or ```
+        if raw.startswith("```"):
+            raw = raw.replace("```json", "").replace("```", "").strip()
+
+        import json as _json
+        import ast
+
+        parsed = {}
+        try:
+            parsed = _json.loads(raw)
+        except Exception:
+            try:
+                parsed = ast.literal_eval(raw)
+            except Exception:
+                # Try simple single-quote to double-quote conversion if both fail
+                try:
+                    parsed = _json.loads(raw.replace("'", '"'))
+                except Exception:
+                    logger.warning("Failed to parse JSON response from search parser: %s", raw)
+                    return _empty
+
+        if not isinstance(parsed, dict):
+            return _empty
+
+        validated = {}
+
+        # 1. city
+        city = parsed.get("city")
+        if city and isinstance(city, str):
+            validated["city"] = city.strip()
+
+        # 2. area
+        area = parsed.get("area")
+        if area and isinstance(area, str):
+            validated["area"] = area.strip()
+
+        # 3. listing_type
+        listing_type = parsed.get("listing_type")
+        if listing_type in ["room_available", "roommate_needed"]:
+            validated["listing_type"] = listing_type
+
+        # 4. property_type validation & aliases
+        prop_aliases = {
+            "1bhk": "1bhk", "1 bhk": "1bhk", "1-bhk": "1bhk",
+            "2bhk": "2bhk", "2 bhk": "2bhk", "2-bhk": "2bhk",
+            "3bhk": "3bhk", "3 bhk": "3bhk", "3-bhk": "3bhk",
+            "1rk": "1rk", "1 rk": "1rk", "1-rk": "1rk", "studio": "1rk",
+            "pg": "pg", "paying guest": "pg", "payingguest": "pg",
+            "hostel": "hostel",
+            "shared_room": "shared_room", "shared room": "shared_room", "sharedroom": "shared_room", "shared": "shared_room"
+        }
+        prop_val = parsed.get("property_type")
+        if prop_val and isinstance(prop_val, str):
+            prop_normalized = prop_val.lower().strip()
+            if prop_normalized in prop_aliases:
+                validated["property_type"] = prop_aliases[prop_normalized]
+
+        # 5. gender_preference
+        gender_preference = parsed.get("gender_preference")
+        if gender_preference in ["any", "boys", "girls", "family"]:
+            validated["gender_preference"] = gender_preference
+
+        # 6. min_rent & max_rent helper
+        def parse_rent(val) -> Optional[int]:
+            if val is None:
+                return None
+            if isinstance(val, int):
+                return val
+            if isinstance(val, float):
+                return int(val)
+            if isinstance(val, str):
+                import re
+                s = val.lower().strip()
+                # Remove common non-numeric junk
+                for junk in ["inr", "rs", "₹", ",", "monthly", "p.m", "pm", "/mo", "rent"]:
+                    s = s.replace(junk, "")
+                s = s.strip()
+                multiplier = 1
+                if "k" in s:
+                    multiplier = 1000
+                    s = s.replace("k", "")
+                elif "lakh" in s:
+                    multiplier = 100000
+                    s = s.replace("lakh", "")
+                nums = re.findall(r'\d+', s)
+                if nums:
+                    return int(nums[0]) * multiplier
+            return None
+
+        min_rent = parse_rent(parsed.get("min_rent"))
+        if min_rent is not None:
+            validated["min_rent"] = min_rent
+
+        max_rent = parse_rent(parsed.get("max_rent"))
+        if max_rent is not None:
+            validated["max_rent"] = max_rent
+
+        # 7. furnishing
+        furnishing = parsed.get("furnishing")
+        if furnishing in ["unfurnished", "semi", "fully"]:
+            validated["furnishing"] = furnishing
+
+        # 8. parking
+        parking = parsed.get("parking")
+        if parking in ["none", "bike", "car", "both"]:
+            validated["parking"] = parking
+
+        return validated
+
+    except Exception as exc:
+        logger.error("Error parsing search query: %s", str(exc))
+        return _empty
+

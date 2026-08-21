@@ -174,6 +174,24 @@ async def score_description(
     return result
 
 
+@router.post("/parse-search")
+async def parse_search(
+    body: dict,
+    current_user=Depends(get_current_user),
+):
+    """Parse a natural language query into listing search filters. Silent fail."""
+    try:
+        query = body.get("query", "")
+        if not query or len(query.strip()) < 3:
+            return {}
+        result = await ai_service.parse_search_query(query)
+        return result
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error in parse_search endpoint: {e}")
+        return {}
+
+
 @router.get("/{listing_id}", response_model=ListingResponse)
 async def get_one(
     listing_id: str,
