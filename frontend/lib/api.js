@@ -193,3 +193,12 @@ export async function parseSearchQuery(query, token) {
     return {};
   }
 }
+
+export async function chatWithAssistant(listingId, messages, listingContext, token) {
+  return request(`/listings/${listingId}/chat`, {
+    method: "POST",
+    body: { messages, listing_context: listingContext },
+    token,
+  });
+}
+

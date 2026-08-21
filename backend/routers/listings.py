@@ -192,6 +192,29 @@ async def parse_search(
         return {}
 
 
+@router.post("/{listing_id}/chat")
+async def chat_listing(
+    listing_id: str,
+    body: dict,
+    current_user=Depends(get_current_user),
+):
+    """Chat with RoomSathi Assistant about a specific listing."""
+    messages = body.get("messages")
+    listing_context = body.get("listing_context", {})
+
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(status_code=400, detail="Messages must be a non-empty list")
+    
+    if messages[-1].get("role") != "user":
+        raise HTTPException(status_code=400, detail="Last message must be from user")
+
+    # cap at last 10 messages
+    history = messages[-10:]
+
+    reply = await ai_service.chat_with_assistant(history, listing_context)
+    return {"reply": reply}
+
+
 @router.get("/{listing_id}", response_model=ListingResponse)
 async def get_one(
     listing_id: str,

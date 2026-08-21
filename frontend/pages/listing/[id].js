@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "../../context/AuthContext";
 import RazorpayModal from "../../components/RazorpayModal";
-import { 
-  getListing, 
-  saveListing, 
-  unsaveListing, 
-  unlockContact, 
+import {
+  getListing,
+  saveListing,
+  unsaveListing,
+  unlockContact,
   confirmUnlock,
   boostListing,
-  confirmBoost
+  confirmBoost,
+  chatWithAssistant
 } from "../../lib/api";
 
 export default function ListingDetailPage() {
@@ -38,6 +39,18 @@ export default function ListingDetailPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentPurpose, setPaymentPurpose] = useState(""); // unlock | boost
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // AI Chat Widget States
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: "assistant",
+      content: "Hi! I'm your RoomSathi Assistant. Ask me anything about this listing, the area, rent negotiation, or what to check before you move in. 🏠"
+    }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
 
   const fetchListingDetails = async () => {
     if (!id) return;
@@ -168,6 +181,65 @@ export default function ListingDetailPage() {
     }
   };
 
+  // Auto-scroll effect
+  useEffect(() => {
+    if (chatOpen && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chatMessages, chatOpen]);
+
+  async function handleChatSend(overrideText) {
+    const text = typeof overrideText === "string" ? overrideText.trim() : chatInput.trim();
+    if (!text || chatLoading) return;
+
+    const userMessage = { role: "user", content: text };
+    const updatedMessages = [...chatMessages, userMessage];
+    setChatMessages(updatedMessages);
+    setChatInput("");
+    setChatLoading(true);
+
+    // Build listing context from current listing state
+    const listingContext = {
+      title: listing?.title,
+      property_type: listing?.property_type,
+      area: listing?.area,
+      city: listing?.city,
+      rent: listing?.rent,
+      deposit: listing?.deposit,
+      furnishing: listing?.furnishing,
+      gender_preference: listing?.gender_preference,
+      parking: listing?.parking,
+      floor: listing?.floor,
+      available_from: listing?.available_from,
+      description: listing?.description,
+    };
+
+    try {
+      // Send only role+content pairs (no extra fields)
+      const historyToSend = updatedMessages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+      const res = await chatWithAssistant(listing.id, historyToSend, listingContext, token);
+      setChatMessages(prev => [...prev, { role: "assistant", content: res.reply }]);
+    } catch {
+      setChatMessages(prev => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I'm having trouble connecting. Please try again in a moment." }
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  const SUGGESTED_QUESTIONS = [
+    "Is this area safe?",
+    "How far is it from Hinjewadi IT park?",
+    "Is the deposit negotiable?",
+    "What should I check during the site visit?",
+    "What documents will the owner ask for?",
+  ];
+
   if (loading || !user) {
     return (
       <div style={{ textAlign: "center", padding: "48px 0" }}>
@@ -213,15 +285,15 @@ export default function ListingDetailPage() {
 
   return (
     <>
-    <div className="detail-container">
-        
+      <div className="detail-container">
+
         {/* Navigation & Action Bar */}
         <div className="detail-header-actions">
           <button className="outline back-btn" onClick={() => router.push("/search")}>
             ← Back to Listings
           </button>
-          
-          <button 
+
+          <button
             className={`save-btn-action ${listing.is_saved ? "active" : ""}`}
             onClick={handleSaveToggle}
           >
@@ -231,29 +303,29 @@ export default function ListingDetailPage() {
 
         {/* main layout grid */}
         <div className="detail-grid">
-          
+
           {/* LEFT COLUMN: Gallery, Description, Details */}
           <div className="left-pane">
-            
+
             {/* Premium Image Gallery */}
             <div className="gallery-section card">
               {showPhotos ? (
                 <div className="carousel-main">
-                  <img 
-                    src={listing.photos[activePhotoIndex]} 
+                  <img
+                    src={listing.photos[activePhotoIndex]}
                     alt={`Property ${activePhotoIndex + 1}`}
                     onClick={() => setLightboxOpen(true)}
                     className="carousel-image-view"
                   />
                   {listing.photos.length > 1 && (
                     <>
-                      <button 
+                      <button
                         className="carousel-nav-btn prev"
                         onClick={() => setActivePhotoIndex(prev => prev === 0 ? listing.photos.length - 1 : prev - 1)}
                       >
                         ‹
                       </button>
-                      <button 
+                      <button
                         className="carousel-nav-btn next"
                         onClick={() => setActivePhotoIndex(prev => prev === listing.photos.length - 1 ? 0 : prev + 1)}
                       >
@@ -275,8 +347,8 @@ export default function ListingDetailPage() {
               {showPhotos && listing.photos.length > 1 && (
                 <div className="thumbnails-strip">
                   {listing.photos.map((url, idx) => (
-                    <div 
-                      key={idx} 
+                    <div
+                      key={idx}
                       className={`thumb-wrapper ${activePhotoIndex === idx ? "active" : ""}`}
                       onClick={() => setActivePhotoIndex(idx)}
                     >
@@ -344,19 +416,19 @@ export default function ListingDetailPage() {
 
           {/* RIGHT COLUMN: Contact Panel / Action Widget */}
           <div className="right-pane">
-            
+
             <div className="contact-widget card">
-              
+
               {/* OWNER VIEW */}
               {isOwner ? (
                 <div className="owner-controls">
                   <h3 style={{ color: "#065f46", margin: "0 0 16px" }}>You are the Owner</h3>
-                  
+
                   <div className="contact-details-box">
                     <p><strong>Name:</strong> {user.full_name}</p>
                     <p><strong>Phone:</strong> {user.phone}</p>
                   </div>
-                  
+
                   <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
                     {!listing.is_boosted ? (
                       <button className="primary" onClick={() => setBoostModalOpen(true)}>
@@ -368,7 +440,7 @@ export default function ListingDetailPage() {
                         <strong>{new Date(listing.boost_expires_at).toLocaleDateString()}</strong>
                       </div>
                     )}
-                    
+
                     <button className="outline" onClick={() => alert("Edit Listing is under development")}>
                       ✏️ Edit Listing Details
                     </button>
@@ -395,13 +467,13 @@ export default function ListingDetailPage() {
               ) : (
                 /* SEEKER VIEW */
                 <div className="seeker-controls">
-                  
+
                   {listing.is_unlocked ? (
                     /* UNLOCKED VIEW */
                     <div className="unlocked-contact-box animate-fade">
                       <div className="unlock-badge">✅ CONTACT UNLOCKED</div>
                       <h3>Owner Contact Details</h3>
-                      
+
                       <div className="contact-details-box" style={{ margin: "16px 0" }}>
                         <p style={{ fontSize: "1.1rem", margin: "0 0 8px" }}>
                           <strong>👤 Name:</strong> {listing.owner_name}
@@ -412,16 +484,16 @@ export default function ListingDetailPage() {
                       </div>
 
                       <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-                        <a 
-                          href={`tel:${listing.owner_phone}`} 
+                        <a
+                          href={`tel:${listing.owner_phone}`}
                           className="action-link-btn call"
                           style={{ flex: 1, textAlign: "center" }}
                         >
                           📞 Call Now
                         </a>
-                        <a 
-                          href={`https://wa.me/91${listing.owner_phone}?text=Hi,%20I'm%20interested%20in%20your%20RoomSathi%20listing:%20${encodeURIComponent(listing.title)}`} 
-                          target="_blank" 
+                        <a
+                          href={`https://wa.me/91${listing.owner_phone}?text=Hi,%20I'm%20interested%20in%20your%20RoomSathi%20listing:%20${encodeURIComponent(listing.title)}`}
+                          target="_blank"
                           rel="noreferrer"
                           className="action-link-btn whatsapp"
                           style={{ flex: 1, textAlign: "center" }}
@@ -439,7 +511,7 @@ export default function ListingDetailPage() {
                         Unlock this contact to directly talk, call, or chat with the landlord/flatmate. We keep listings trusted and spam-free.
                       </p>
 
-                      <button 
+                      <button
                         className="primary unlock-trigger-btn"
                         onClick={() => setUnlockModalOpen(true)}
                         style={{ width: "100%", padding: "14px" }}
@@ -479,23 +551,23 @@ export default function ListingDetailPage() {
         <div className="custom-modal-overlay">
           <div className="custom-modal card animate-fade">
             <button className="close-modal-btn" onClick={() => setUnlockModalOpen(false)}>✕</button>
-            
+
             <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem", color: "#111827" }}>Unlock Contact Options</h3>
             <p style={{ color: "#6b7280", fontSize: "0.9rem", margin: "0 0 20px" }}>
               Select a payment option to unlock this contact details.
             </p>
 
             <div className="modal-options-list">
-              
+
               {/* Option 1: Single */}
-              <div 
+              <div
                 className={`modal-pay-option ${selectedUnlockType === "single" ? "selected" : ""}`}
                 onClick={() => setSelectedUnlockType("single")}
               >
-                <input 
-                  type="radio" 
-                  checked={selectedUnlockType === "single"} 
-                  readOnly 
+                <input
+                  type="radio"
+                  checked={selectedUnlockType === "single"}
+                  readOnly
                 />
                 <div style={{ flexGrow: 1 }}>
                   <strong>Single Listing Unlock</strong>
@@ -507,13 +579,13 @@ export default function ListingDetailPage() {
               </div>
 
               {/* Option 2: Plan */}
-              <div 
+              <div
                 className={`modal-pay-option ${selectedUnlockType === "plan" ? "selected" : ""}`}
                 onClick={() => setSelectedUnlockType("plan")}
               >
-                <input 
-                  type="radio" 
-                  checked={selectedUnlockType === "plan"} 
+                <input
+                  type="radio"
+                  checked={selectedUnlockType === "plan"}
                   readOnly
                 />
                 <div style={{ flexGrow: 1 }}>
@@ -528,15 +600,15 @@ export default function ListingDetailPage() {
             </div>
 
             <div style={{ marginTop: "24px", display: "flex", gap: "10px" }}>
-              <button 
-                className="outline" 
+              <button
+                className="outline"
                 style={{ flex: 1 }}
                 onClick={() => setUnlockModalOpen(false)}
               >
                 Cancel
               </button>
-              <button 
-                className="primary" 
+              <button
+                className="primary"
                 style={{ flex: 2 }}
                 disabled={processingPayment}
                 onClick={() => handleInitiateUnlock(selectedUnlockType)}
@@ -554,23 +626,23 @@ export default function ListingDetailPage() {
         <div className="custom-modal-overlay">
           <div className="custom-modal card animate-fade">
             <button className="close-modal-btn" onClick={() => setBoostModalOpen(false)}>✕</button>
-            
+
             <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem", color: "#111827" }}>Boost Your Listing</h3>
             <p style={{ color: "#6b7280", fontSize: "0.9rem", margin: "0 0 20px" }}>
               Stand out and get up to 10x more visibility by placing your listing at the top of searches.
             </p>
 
             <div className="modal-options-list">
-              
+
               {/* Option 1: 7 Days */}
-              <div 
+              <div
                 className={`modal-pay-option ${selectedBoostDays === 7 ? "selected" : ""}`}
                 onClick={() => setSelectedBoostDays(7)}
               >
-                <input 
-                  type="radio" 
-                  checked={selectedBoostDays === 7} 
-                  readOnly 
+                <input
+                  type="radio"
+                  checked={selectedBoostDays === 7}
+                  readOnly
                 />
                 <div style={{ flexGrow: 1 }}>
                   <strong>7 Days Boost</strong>
@@ -582,13 +654,13 @@ export default function ListingDetailPage() {
               </div>
 
               {/* Option 2: 15 Days */}
-              <div 
+              <div
                 className={`modal-pay-option ${selectedBoostDays === 15 ? "selected" : ""}`}
                 onClick={() => setSelectedBoostDays(15)}
               >
-                <input 
-                  type="radio" 
-                  checked={selectedBoostDays === 15} 
+                <input
+                  type="radio"
+                  checked={selectedBoostDays === 15}
                   readOnly
                 />
                 <div style={{ flexGrow: 1 }}>
@@ -603,15 +675,15 @@ export default function ListingDetailPage() {
             </div>
 
             <div style={{ marginTop: "24px", display: "flex", gap: "10px" }}>
-              <button 
-                className="outline" 
+              <button
+                className="outline"
                 style={{ flex: 1 }}
                 onClick={() => setBoostModalOpen(false)}
               >
                 Cancel
               </button>
-              <button 
-                className="primary" 
+              <button
+                className="primary"
                 style={{ flex: 2 }}
                 disabled={processingPayment}
                 onClick={() => handleInitiateBoost(selectedBoostDays)}
@@ -1051,6 +1123,207 @@ export default function ListingDetailPage() {
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
+
+      {/* ── AI Chat Widget ── */}
+      {listing && (
+        <>
+          {/* Floating toggle button — fixed bottom-right */}
+          <button
+            onClick={() => setChatOpen(o => !o)}
+            style={{
+              position: "fixed",
+              bottom: "24px",
+              right: "24px",
+              width: "56px",
+              height: "56px",
+              borderRadius: "50%",
+              background: "#065f46",
+              color: "white",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "1.5rem",
+              boxShadow: "0 4px 20px rgba(6,95,70,0.4)",
+              zIndex: 1000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "transform 0.2s ease",
+            }}
+            aria-label={chatOpen ? "Close assistant" : "Open RoomSathi Assistant"}
+          >
+            {chatOpen ? "✕" : "🤖"}
+          </button>
+
+          {/* Chat panel — fixed bottom-right above button */}
+          {chatOpen && (
+            <div style={{
+              position: "fixed",
+              bottom: "92px",
+              right: "24px",
+              width: "340px",
+              maxWidth: "calc(100vw - 48px)",
+              height: "480px",
+              background: "white",
+              borderRadius: "20px",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.18)",
+              display: "flex",
+              flexDirection: "column",
+              zIndex: 999,
+              overflow: "hidden",
+              border: "1px solid #e5e7eb",
+            }}>
+
+              {/* Header */}
+              <div style={{
+                background: "#065f46",
+                color: "white",
+                padding: "14px 18px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: "1.2rem" }}>🤖</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>
+                    RoomSathi Assistant
+                  </div>
+                  <div style={{ fontSize: "0.72rem", opacity: 0.8 }}>
+                    Ask anything about this listing
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages area */}
+              <div style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}>
+                {chatMessages.map((msg, i) => (
+                  <div key={i} style={{
+                    display: "flex",
+                    justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+                  }}>
+                    <div style={{
+                      maxWidth: "85%",
+                      padding: "10px 14px",
+                      borderRadius: msg.role === "user"
+                        ? "18px 18px 4px 18px"
+                        : "18px 18px 18px 4px",
+                      background: msg.role === "user" ? "#065f46" : "#f3f4f6",
+                      color: msg.role === "user" ? "white" : "#111827",
+                      fontSize: "0.85rem",
+                      lineHeight: "1.5",
+                      whiteSpace: "pre-wrap",
+                    }}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Suggested questions — only when fresh */}
+                {chatMessages.length === 1 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
+                    <span style={{ fontSize: "0.72rem", color: "#9ca3af", marginLeft: "2px" }}>
+                      Try asking:
+                    </span>
+                    {SUGGESTED_QUESTIONS.map((q, i) => (
+                      <button key={i} onClick={() => {
+                        setChatInput(q)
+                        setTimeout(() => handleChatSend(q), 0)
+                      }}
+                        style={{
+                          background: "white",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: "999px",
+                          padding: "6px 12px",
+                          fontSize: "0.78rem",
+                          color: "#065f46",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          transition: "background 0.15s",
+                        }}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Typing indicator */}
+                {chatLoading && (
+                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                    <div style={{
+                      background: "#f3f4f6",
+                      borderRadius: "18px 18px 18px 4px",
+                      padding: "10px 16px",
+                      fontSize: "1.2rem",
+                      letterSpacing: "2px",
+                    }}>
+                      ···
+                    </div>
+                  </div>
+                )}
+
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input area */}
+              <div style={{
+                padding: "10px 12px",
+                borderTop: "1px solid #e5e7eb",
+                display: "flex",
+                gap: "8px",
+                flexShrink: 0,
+                background: "white",
+              }}>
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleChatSend()}
+                  placeholder="Ask anything..."
+                  disabled={chatLoading}
+                  style={{
+                    flex: 1,
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "999px",
+                    padding: "8px 14px",
+                    fontSize: "0.85rem",
+                    outline: "none",
+                    background: chatLoading ? "#f9fafb" : "white",
+                  }}
+                />
+                <button
+                  onClick={() => handleChatSend()}
+                  disabled={chatLoading || !chatInput.trim()}
+                  style={{
+                    background: "#065f46",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "50%",
+                    width: "36px",
+                    height: "36px",
+                    cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer",
+                    opacity: chatLoading || !chatInput.trim() ? 0.5 : 1,
+                    fontSize: "1rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  ➤
+                </button>
+              </div>
+
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }

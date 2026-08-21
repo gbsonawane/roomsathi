@@ -459,3 +459,90 @@ async def parse_search_query(query: str) -> dict:
         logger.error("Error parsing search query: %s", str(exc))
         return _empty
 
+
+async def chat_with_assistant(
+    messages: list[dict],
+    listing_context: dict
+) -> str:
+    """
+    Interact with RoomSathi Assistant using the NVIDIA NIM API.
+    Provides context-aware help on listing, safety, legal, and amenities.
+    """
+    if not settings.NVIDIA_API_KEY:
+        logger.error("NVIDIA_API_KEY is not configured.")
+        raise HTTPException(status_code=502, detail="Assistant unavailable")
+
+    headers = {
+        "Authorization": f"Bearer {settings.NVIDIA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    SYSTEM_PROMPT = f"""You are RoomSathi Assistant — a helpful, friendly, and
+    honest AI for an Indian room rental platform. You are helping a room seeker
+    who is viewing a specific listing. Answer their questions concisely (2-4
+    sentences max). Be practical and India-specific.
+
+    === Current Listing ===
+    Title: {listing_context.get('title', 'N/A')}
+    Property type: {listing_context.get('property_type', 'N/A')}
+    Area: {listing_context.get('area', 'N/A')}
+    City: {listing_context.get('city', 'N/A')}
+    Rent: ₹{listing_context.get('rent', 'N/A')}/month
+    Deposit: ₹{listing_context.get('deposit', 'N/A')}
+    Furnishing: {listing_context.get('furnishing', 'N/A')}
+    Gender preference: {listing_context.get('gender_preference', 'N/A')}
+    Parking: {listing_context.get('parking', 'N/A')}
+    Floor: {listing_context.get('floor', 'N/A')}
+    Available from: {listing_context.get('available_from', 'N/A')}
+    Description: {listing_context.get('description', 'N/A')}
+
+    === Your expertise ===
+    - Area safety, vibe, and locality knowledge for Indian cities
+    - Commute times to major IT hubs (Hinjewadi, Magarpatta, Viman Nagar, etc.)
+    - Rent negotiation tactics for Indian rental market
+    - Typical deposit norms (2-3 months is standard in Pune/Mumbai)
+    - Nearby amenities: grocery, metro, hospitals, colleges
+    - Tenant rights in Maharashtra (11-month lease, police verification, etc.)
+    - Red flags in rental listings and what to check during site visit
+    - Questions to ask the owner before signing
+
+    === Rules ===
+    - Never make up specific addresses or phone numbers
+    - If asked something outside rental context, redirect politely
+    - Keep answers short and actionable
+    - Use ₹ for currency, not $ or Rs.
+    - Always be on the seeker's side"""
+
+    payload = {
+        "model": NVIDIA_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *messages
+        ],
+        "max_tokens": 350,
+        "temperature": 0.65,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(NVIDIA_NIM_URL, json=payload, headers=headers)
+
+        if response.status_code != 200:
+            logger.error(
+                "NVIDIA NIM API returned status %d: %s",
+                response.status_code,
+                response.text,
+            )
+            raise HTTPException(status_code=502, detail="Assistant unavailable")
+
+        data = response.json()
+        reply = data["choices"][0]["message"]["content"].strip()
+        return reply
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error in chat_with_assistant: %s", str(exc))
+        raise HTTPException(status_code=502, detail="Assistant unavailable")
+
+
