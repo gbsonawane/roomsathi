@@ -173,3 +173,11 @@ export async function generateTitle(data, token) {
     token,
   });
 }
+
+export async function scoreDescription(data, token) {
+  return request("/listings/score-description", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}

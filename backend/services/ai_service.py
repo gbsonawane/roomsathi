@@ -200,3 +200,79 @@ async def generate_listing_title(listing_data: dict) -> str:
     except Exception as exc:
         logger.error("Error calling NVIDIA NIM API: %s", str(exc))
         raise HTTPException(status_code=502, detail="AI service unavailable")
+
+
+SCORE_SYSTEM_PROMPT = (
+    "You are a listing quality checker for an Indian room rental platform. "
+    "Rate the following listing description on a scale of 1 to 5 based on: "
+    "clarity, specificity, and helpfulness for a room seeker. "
+    "Respond in JSON only, no explanation, exactly in this format: "
+    "{ \"score\": <1-5>, \"tip\": \"<one short improvement tip in under 10 words>\" } "
+    "If score is 5, set tip to empty string."
+)
+
+
+async def score_listing_description(description: str) -> dict:
+    """
+    Call NVIDIA NIM API to rate the quality of a listing description.
+
+    Returns a dict with keys:
+        score (int 1-5): quality rating
+        tip   (str):     short improvement tip, empty string if score 5
+
+    Never raises — on any failure returns { "score": 0, "tip": "" }.
+    """
+    _silent_fail = {"score": 0, "tip": ""}
+
+    if not settings.NVIDIA_API_KEY:
+        logger.warning("NVIDIA_API_KEY not configured; skipping description score.")
+        return _silent_fail
+
+    headers = {
+        "Authorization": f"Bearer {settings.NVIDIA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": NVIDIA_MODEL,
+        "messages": [
+            {"role": "system", "content": SCORE_SYSTEM_PROMPT},
+            {"role": "user", "content": description},
+        ],
+        "max_tokens": 80,
+        "temperature": 0.3,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(NVIDIA_NIM_URL, json=payload, headers=headers)
+
+        if response.status_code != 200:
+            logger.warning(
+                "NVIDIA NIM returned %d for score request: %s",
+                response.status_code,
+                response.text,
+            )
+            return _silent_fail
+
+        data = response.json()
+        raw = data["choices"][0]["message"]["content"].strip()
+
+        # Strip potential markdown code fences if the model wraps in ```json
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+
+        import json as _json
+        parsed = _json.loads(raw)
+        score = int(parsed.get("score", 0))
+        tip = str(parsed.get("tip", ""))
+        if not (1 <= score <= 5):
+            return _silent_fail
+        return {"score": score, "tip": tip}
+
+    except Exception as exc:
+        logger.warning("Error scoring description (non-critical): %s", str(exc))
+        return _silent_fail

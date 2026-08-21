@@ -161,6 +161,19 @@ async def generate_title(
     return {"title": title}
 
 
+@router.post("/score-description")
+async def score_description(
+    body: dict,
+    current_user=Depends(get_current_user),
+):
+    """Rate the quality of a listing description using AI (1-5 stars). Silent fail."""
+    description = body.get("description", "")
+    if len(description) < 20:
+        return {"score": 0, "tip": ""}
+    result = await ai_service.score_listing_description(description)
+    return result
+
+
 @router.get("/{listing_id}", response_model=ListingResponse)
 async def get_one(
     listing_id: str,

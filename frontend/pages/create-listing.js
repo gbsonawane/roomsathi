@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
 import RazorpayModal from "../components/RazorpayModal";
-import { createListing, uploadPhotos, createPlanOrder, generateDescription, generateTitle } from "../lib/api";
+import { createListing, uploadPhotos, createPlanOrder, generateDescription, generateTitle, scoreDescription } from "../lib/api";
 
 const PUNE_AREAS = [
-  "Kothrud", "Kalyani Nagar", "Viman Nagar", "Baner", "Hinjawadi", 
-  "Aundh", "Wakad", "Hadapsar", "Kharadi", "Pimple Saudagar", 
-  "Karve Nagar", "Katraj", "Shivajinagar", "Deccan Gymkhana", 
-  "Koregaon Park", "Bibwewadi", "Balewadi", "Bavdhan", 
+  "Kothrud", "Kalyani Nagar", "Viman Nagar", "Baner", "Hinjawadi",
+  "Aundh", "Wakad", "Hadapsar", "Kharadi", "Pimple Saudagar",
+  "Karve Nagar", "Katraj", "Shivajinagar", "Deccan Gymkhana",
+  "Koregaon Park", "Bibwewadi", "Balewadi", "Bavdhan",
   "Sinhagad Road", "Dhankawadi"
 ];
 
@@ -30,7 +30,7 @@ export default function CreateListing() {
   const [city, setCity] = useState("Pune");
   const [area, setArea] = useState("");
   const [areaSuggestions, setAreaSuggestions] = useState([]);
-  
+
   const [furnishing, setFurnishing] = useState("unfurnished");
   const [genderPreference, setGenderPreference] = useState("any");
   const [parking, setParking] = useState("none");
@@ -38,7 +38,7 @@ export default function CreateListing() {
 
   const [rent, setRent] = useState("");
   const [deposit, setDeposit] = useState("");
-  
+
   // Set default tomorrow's date
   const getTomorrowString = () => {
     const d = new Date();
@@ -49,7 +49,7 @@ export default function CreateListing() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  
+
   // Photo states
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -72,10 +72,45 @@ export default function CreateListing() {
   const [aiTitleGenerating, setAiTitleGenerating] = useState(false);
   const [aiTitleError, setAiTitleError] = useState("");
 
+  // Description quality score state
+  const [descScore, setDescScore] = useState(0);
+  const [descTip, setDescTip] = useState("");
+  const scoreTimerRef = useRef(null);
+
+  // Helper: call score API immediately with a given description string
+  const triggerScoreApi = async (text) => {
+    if (!text || text.length <= 20) {
+      setDescScore(0);
+      setDescTip("");
+      return;
+    }
+    try {
+      const res = await scoreDescription({ description: text }, token);
+      setDescScore(res.score ?? 0);
+      setDescTip(res.tip ?? "");
+    } catch (_) {
+      // silent fail — quality score is non-critical
+    }
+  };
+
+  // Debounce: score description 1500 ms after user stops typing
+  useEffect(() => {
+    if (scoreTimerRef.current) clearTimeout(scoreTimerRef.current);
+    if (description.length > 20) {
+      scoreTimerRef.current = setTimeout(() => {
+        triggerScoreApi(description);
+      }, 1500);
+    } else {
+      setDescScore(0);
+      setDescTip("");
+    }
+    return () => clearTimeout(scoreTimerRef.current);
+  }, [description]);
+
   // Filter area suggestions
   useEffect(() => {
     if (area.length > 1) {
-      const filtered = PUNE_AREAS.filter(a => 
+      const filtered = PUNE_AREAS.filter(a =>
         a.toLowerCase().includes(area.toLowerCase())
       );
       setAreaSuggestions(filtered);
@@ -104,6 +139,8 @@ export default function CreateListing() {
       };
       const res = await generateDescription(payload, token);
       setDescription(res.description);
+      // Score immediately after auto-generate (no debounce delay needed)
+      triggerScoreApi(res.description);
     } catch (err) {
       setAiError("Could not generate. Try again.");
     } finally {
@@ -255,14 +292,14 @@ export default function CreateListing() {
           Your property listing has been successfully published on RoomSathi. It is now live and visible to room seekers in Pune.
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <button 
-            className="primary" 
+          <button
+            className="primary"
             onClick={() => router.push(`/listing/${createdListingId}`)}
           >
             View My Listing
           </button>
-          <button 
-            className="outline" 
+          <button
+            className="outline"
             onClick={() => router.push("/home")}
           >
             Go to Home
@@ -274,20 +311,20 @@ export default function CreateListing() {
 
   return (
     <>
-    <div style={{ maxWidth: "680px", margin: "20px auto" }}>
-        
+      <div style={{ maxWidth: "680px", margin: "20px auto" }}>
+
         {/* Progress Bar */}
         <div className="progress-container">
           <div className="progress-bar-bg">
-            <div 
-              className="progress-bar-fill" 
+            <div
+              className="progress-bar-fill"
               style={{ width: `${(step / 6) * 100}%` }}
             />
           </div>
           <div className="steps-indicator">
             {[1, 2, 3, 4, 5, 6].map(s => (
-              <div 
-                key={s} 
+              <div
+                key={s}
                 className={`step-dot ${step === s ? "active" : ""} ${step > s ? "completed" : ""}`}
                 onClick={() => {
                   if (s < step) setStep(s);
@@ -314,17 +351,17 @@ export default function CreateListing() {
         )}
 
         <div className="card form-card">
-          
+
           {/* STEP 1 */}
           {step === 1 && (
             <div className="form-step-content animate-fade">
               <h2>Basic Information</h2>
               <p className="subtitle">Let's start with what type of listing you want to create.</p>
-              
+
               <div className="input-group">
                 <label>Listing Type</label>
                 <div className="type-toggle-grid">
-                  <div 
+                  <div
                     className={`toggle-option ${listingType === "room_available" ? "selected" : ""}`}
                     onClick={() => setListingType("room_available")}
                   >
@@ -334,7 +371,7 @@ export default function CreateListing() {
                       <small>You have a flat/room to rent out</small>
                     </div>
                   </div>
-                  <div 
+                  <div
                     className={`toggle-option ${listingType === "roommate_needed" ? "selected" : ""}`}
                     onClick={() => setListingType("roommate_needed")}
                   >
@@ -349,9 +386,9 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="propertyType">Property Type</label>
-                <select 
+                <select
                   id="propertyType"
-                  value={propertyType} 
+                  value={propertyType}
                   onChange={(e) => setPropertyType(e.target.value)}
                 >
                   <option value="1bhk">1 BHK</option>
@@ -366,22 +403,22 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="city">City</label>
-                <input 
+                <input
                   id="city"
-                  type="text" 
-                  value={city} 
-                  onChange={(e) => setCity(e.target.value)} 
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
                   placeholder="Pune"
                 />
               </div>
 
               <div className="input-group" style={{ marginTop: "20px", position: "relative" }}>
                 <label htmlFor="area">Area / Locality in Pune</label>
-                <input 
+                <input
                   id="area"
-                  type="text" 
-                  value={area} 
-                  onChange={(e) => setArea(e.target.value)} 
+                  type="text"
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
                   placeholder="e.g. Kothrud, Viman Nagar"
                   autoComplete="off"
                 />
@@ -435,9 +472,9 @@ export default function CreateListing() {
 
               <div className="input-group">
                 <label htmlFor="furnishing">Furnishing Status</label>
-                <select 
+                <select
                   id="furnishing"
-                  value={furnishing} 
+                  value={furnishing}
                   onChange={(e) => setFurnishing(e.target.value)}
                 >
                   <option value="unfurnished">Unfurnished</option>
@@ -448,9 +485,9 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="genderPreference">Gender Preference</label>
-                <select 
+                <select
                   id="genderPreference"
-                  value={genderPreference} 
+                  value={genderPreference}
                   onChange={(e) => setGenderPreference(e.target.value)}
                 >
                   <option value="any">No Preference (Any)</option>
@@ -461,9 +498,9 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="parking">Parking Availability</label>
-                <select 
+                <select
                   id="parking"
-                  value={parking} 
+                  value={parking}
                   onChange={(e) => setParking(e.target.value)}
                 >
                   <option value="none">No Parking</option>
@@ -475,11 +512,11 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="floor">Floor Details (Optional)</label>
-                <input 
+                <input
                   id="floor"
-                  type="text" 
-                  value={floor} 
-                  onChange={(e) => setFloor(e.target.value)} 
+                  type="text"
+                  value={floor}
+                  onChange={(e) => setFloor(e.target.value)}
                   placeholder="e.g. 3rd Floor, Ground"
                 />
               </div>
@@ -494,11 +531,11 @@ export default function CreateListing() {
 
               <div className="input-group">
                 <label htmlFor="rent">Monthly Rent (₹)</label>
-                <input 
+                <input
                   id="rent"
-                  type="number" 
-                  value={rent} 
-                  onChange={(e) => setRent(e.target.value)} 
+                  type="number"
+                  value={rent}
+                  onChange={(e) => setRent(e.target.value)}
                   placeholder="e.g. 12000"
                   min="1"
                 />
@@ -506,11 +543,11 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="deposit">Security Deposit (₹)</label>
-                <input 
+                <input
                   id="deposit"
-                  type="number" 
-                  value={deposit} 
-                  onChange={(e) => setDeposit(e.target.value)} 
+                  type="number"
+                  value={deposit}
+                  onChange={(e) => setDeposit(e.target.value)}
                   placeholder="e.g. 24000"
                   min="0"
                 />
@@ -518,10 +555,10 @@ export default function CreateListing() {
 
               <div className="input-group" style={{ marginTop: "20px" }}>
                 <label htmlFor="availableFrom">Available From Date</label>
-                <input 
+                <input
                   id="availableFrom"
-                  type="date" 
-                  value={availableFrom} 
+                  type="date"
+                  value={availableFrom}
                   onChange={(e) => setAvailableFrom(e.target.value)}
                 />
               </div>
@@ -550,13 +587,32 @@ export default function CreateListing() {
                 {aiError && (
                   <div className="ai-error-msg">{aiError}</div>
                 )}
-                <textarea 
+                <textarea
                   id="description"
-                  value={description} 
-                  onChange={(e) => setDescription(e.target.value)} 
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe your room, rules, facilities (Wi-Fi, washing machine, maid) and what type of roommate you want..."
                   style={{ width: "100%", height: "160px", padding: "12px", borderRadius: "12px", border: "1px solid #d1d5db" }}
                 />
+                {descScore > 0 && (
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "14px",
+                    marginTop: "4px",
+                  }}>
+                    <span style={{
+                      color: descScore <= 2 ? "#ef4444" : descScore === 3 ? "#f59e0b" : "#22c55e",
+                      letterSpacing: "1px",
+                    }}>
+                      {Array.from({ length: 5 }, (_, i) => i < descScore ? "★" : "☆").join("")}
+                    </span>
+                    {descTip && (
+                      <span style={{ color: "#6b7280", fontSize: "0.82rem" }}>{descTip}</span>
+                    )}
+                  </div>
+                )}
                 <span className="character-counter">
                   {description.length} / 30 minimum characters
                 </span>
@@ -571,11 +627,11 @@ export default function CreateListing() {
               <p className="subtitle">Upload high quality images of your room. (Basic plan allows max 5 photos)</p>
 
               <div className="upload-dropzone">
-                <input 
-                  type="file" 
-                  multiple 
-                  accept="image/*" 
-                  onChange={handlePhotoUpload} 
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
                   id="file-upload-input"
                   style={{ display: "none" }}
                   disabled={uploading}
@@ -613,7 +669,7 @@ export default function CreateListing() {
               <p className="subtitle">Boost your listing or keep it basic.</p>
 
               <div className="plans-grid">
-                
+
                 {/* Basic Plan */}
                 <div className="plan-card">
                   <h3>Basic Plan</h3>
@@ -623,9 +679,9 @@ export default function CreateListing() {
                     <li>✓ Max 5 Photos</li>
                     <li>✓ Active for 30 Days</li>
                   </ul>
-                  <button 
-                    disabled={submitting} 
-                    className="outline" 
+                  <button
+                    disabled={submitting}
+                    className="outline"
                     onClick={() => handlePlanSelection("basic")}
                   >
                     {submitting && selectedPlan === "basic" ? "Publishing..." : "Choose Free"}
@@ -643,9 +699,9 @@ export default function CreateListing() {
                     <li>✓ Up to 15 Photos</li>
                     <li>✓ 7 Days Automated Boost</li>
                   </ul>
-                  <button 
-                    disabled={submitting} 
-                    className="primary" 
+                  <button
+                    disabled={submitting}
+                    className="primary"
                     onClick={() => handlePlanSelection("standard")}
                   >
                     {submitting && selectedPlan === "standard" ? "Loading..." : "Pay ₹199"}
@@ -663,9 +719,9 @@ export default function CreateListing() {
                     <li>✓ 15 Days Automated Boost</li>
                     <li>✓ Shared to Telegram & WhatsApp</li>
                   </ul>
-                  <button 
-                    disabled={submitting} 
-                    className="primary" 
+                  <button
+                    disabled={submitting}
+                    className="primary"
                     onClick={() => handlePlanSelection("premium")}
                   >
                     {submitting && selectedPlan === "premium" ? "Loading..." : "Pay ₹399"}
@@ -679,17 +735,17 @@ export default function CreateListing() {
           {/* Form Actions (for steps 1-5) */}
           {step < 6 && (
             <div className="form-actions">
-              <button 
-                type="button" 
-                disabled={step === 1} 
-                onClick={prevStep} 
+              <button
+                type="button"
+                disabled={step === 1}
+                onClick={prevStep}
                 className="outline"
               >
                 Back
               </button>
-              <button 
-                type="button" 
-                onClick={nextStep} 
+              <button
+                type="button"
+                onClick={nextStep}
                 className="primary"
               >
                 Next Step
