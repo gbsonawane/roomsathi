@@ -26,17 +26,17 @@ export default function HomePage() {
 
     if (user && token) {
       setLoadingListings(true);
-      
+
       // Load both boosted and recent listings
       Promise.all([
         getListings({ is_boosted: true, limit: 3 }),
         getListings({ limit: 6 })
       ])
-        .then(([boosted, all]) => {
-          setFeaturedListings(boosted);
+        .then(([boostedRes, allRes]) => {
+          setFeaturedListings(boostedRes.items);
           // filter out duplicates if any
-          const boostedIds = new Set(boosted.map(b => b.id));
-          setRecentListings(all.filter(item => !boostedIds.has(item.id)));
+          const boostedIds = new Set(boostedRes.items.map(b => b.id));
+          setRecentListings(allRes.items.filter(item => !boostedIds.has(item.id)));
         })
         .catch((err) => setFetchError(err.message))
         .finally(() => setLoadingListings(false));
@@ -98,99 +98,99 @@ export default function HomePage() {
 
   return (
     <div className="home-dashboard">
-        
-        {/* Hero Welcome banner */}
-        <header className="hero-banner">
-          <div className="hero-content">
-            <h1>Welcome, {user.full_name || "Friend"}!</h1>
-            <p>Your hyperlocal community to find rooms and roommates in Pune, Maharashtra.</p>
-            
-            <div className="hero-actions">
-              <button className="primary hero-btn" onClick={() => router.push("/search")}>
-                🔍 Search Rooms & Roommates
-              </button>
-              <button className="outline secondary-hero-btn" onClick={() => router.push("/create-listing")}>
-                ➕ Post a Room / Requirement
-              </button>
-            </div>
-          </div>
-          <div className="hero-graphic">🏠🤝</div>
-        </header>
 
-        {/* Plan Upgrade Banner */}
-        {!isPassActive ? (
-          <div className="card upgrade-pass-banner animate-fade">
-            <div className="banner-icon">👑</div>
-            <div className="banner-details">
-              <h3>Get RoomSathi Monthly Pass</h3>
-              <p>Unlock unlimited owner contact details for 30 days. Save money on brokers & agents.</p>
-            </div>
-            <button 
-              className="primary buy-pass-btn" 
-              onClick={handleBuyPass}
-              disabled={purchasing}
-            >
-              {purchasing ? "Processing..." : "Get Pass for ₹299"}
+      {/* Hero Welcome banner */}
+      <header className="hero-banner">
+        <div className="hero-content">
+          <h1>Welcome, {user.full_name || "Friend"}!</h1>
+          <p>Your hyperlocal community to find rooms and roommates in Pune, Maharashtra.</p>
+
+          <div className="hero-actions">
+            <button className="primary hero-btn" onClick={() => router.push("/search")}>
+              🔍 Search Rooms & Roommates
+            </button>
+            <button className="outline secondary-hero-btn" onClick={() => router.push("/create-listing")}>
+              ➕ Post a Room / Requirement
             </button>
           </div>
-        ) : (
-          <div className="card pass-active-banner">
-            <div className="banner-icon">🎉</div>
-            <div className="banner-details">
-              <h3>Monthly Pass Active</h3>
-              <p>You have unlimited contact unlocks. Expires on: {new Date(user.plan_expires_at).toLocaleDateString()}</p>
-            </div>
+        </div>
+        <div className="hero-graphic">🏠🤝</div>
+      </header>
+
+      {/* Plan Upgrade Banner */}
+      {!isPassActive ? (
+        <div className="card upgrade-pass-banner animate-fade">
+          <div className="banner-icon">👑</div>
+          <div className="banner-details">
+            <h3>Get RoomSathi Monthly Pass</h3>
+            <p>Unlock unlimited owner contact details for 30 days. Save money on brokers & agents.</p>
           </div>
-        )}
+          <button
+            className="primary buy-pass-btn"
+            onClick={handleBuyPass}
+            disabled={purchasing}
+          >
+            {purchasing ? "Processing..." : "Get Pass for ₹299"}
+          </button>
+        </div>
+      ) : (
+        <div className="card pass-active-banner">
+          <div className="banner-icon">🎉</div>
+          <div className="banner-details">
+            <h3>Monthly Pass Active</h3>
+            <p>You have unlimited contact unlocks. Expires on: {new Date(user.plan_expires_at).toLocaleDateString()}</p>
+          </div>
+        </div>
+      )}
 
-        {/* TOP BOOSTED LISTINGS */}
-        {featuredListings.length > 0 && (
-          <section className="dashboard-section">
-            <div className="section-header">
-              <h2>⚡ Featured Properties</h2>
-              <span className="section-subtitle">Top boosted postings in Pune</span>
-            </div>
-            <div className="listings-grid">
-              {featuredListings.map(listing => (
-                <ListingCard key={listing.id} listing={listing} token={token} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* RECENT LISTINGS */}
-        <section className="dashboard-section" style={{ marginTop: "32px" }}>
+      {/* TOP BOOSTED LISTINGS */}
+      {featuredListings.length > 0 && (
+        <section className="dashboard-section">
           <div className="section-header">
-            <h2>🏠 Fresh Listings</h2>
-            <span className="section-subtitle">Newly posted listings across Pune</span>
+            <h2>⚡ Featured Properties</h2>
+            <span className="section-subtitle">Top boosted postings in Pune</span>
           </div>
-
-          {fetchError && <p className="error-text">{fetchError}</p>}
-
-          {loadingListings ? (
-            <div className="skeleton-grid">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="skeleton-card card">
-                  <div className="skeleton-image"></div>
-                  <div className="skeleton-content">
-                    <div className="skeleton-line title"></div>
-                    <div className="skeleton-line text"></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : recentListings.length > 0 ? (
-            <div className="listings-grid">
-              {recentListings.map(listing => (
-                <ListingCard key={listing.id} listing={listing} token={token} />
-              ))}
-            </div>
-          ) : (
-            <div className="card empty-state" style={{ padding: "40px", textAlign: "center" }}>
-              <p style={{ margin: 0, color: "#6b7280" }}>No fresh listings posted today. Check back later!</p>
-            </div>
-          )}
+          <div className="listings-grid">
+            {featuredListings.map(listing => (
+              <ListingCard key={listing.id} listing={listing} token={token} />
+            ))}
+          </div>
         </section>
+      )}
+
+      {/* RECENT LISTINGS */}
+      <section className="dashboard-section" style={{ marginTop: "32px" }}>
+        <div className="section-header">
+          <h2>🏠 Fresh Listings</h2>
+          <span className="section-subtitle">Newly posted listings across Pune</span>
+        </div>
+
+        {fetchError && <p className="error-text">{fetchError}</p>}
+
+        {loadingListings ? (
+          <div className="skeleton-grid">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="skeleton-card card">
+                <div className="skeleton-image"></div>
+                <div className="skeleton-content">
+                  <div className="skeleton-line title"></div>
+                  <div className="skeleton-line text"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : recentListings.length > 0 ? (
+          <div className="listings-grid">
+            {recentListings.map(listing => (
+              <ListingCard key={listing.id} listing={listing} token={token} />
+            ))}
+          </div>
+        ) : (
+          <div className="card empty-state" style={{ padding: "40px", textAlign: "center" }}>
+            <p style={{ margin: 0, color: "#6b7280" }}>No fresh listings posted today. Check back later!</p>
+          </div>
+        )}
+      </section>
 
       {/* Razorpay Integration */}
       {paymentConfig && (

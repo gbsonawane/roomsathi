@@ -1,3 +1,4 @@
+import uuid
 from typing import Optional, AsyncGenerator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -38,7 +39,8 @@ async def get_current_user_optional(
         if not user_id:
             return None
         from backend.models.user import User
-        result = await db.execute(select(User).where(User.id == user_id))
+        user_uuid = uuid.UUID(user_id)
+        result = await db.execute(select(User).where(User.id == user_uuid))
         return result.scalar_one_or_none()
     except jwt.ExpiredSignatureError:
         return None
@@ -60,7 +62,7 @@ async def get_current_user(
         if not user_id:
             raise UnauthorizedError("Invalid token")
         from backend.models.user import User
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
         user = result.scalar_one_or_none()
         if not user:
             raise UnauthorizedError("User not found")

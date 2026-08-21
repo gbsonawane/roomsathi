@@ -108,7 +108,7 @@ async def get_listing(
     db: AsyncSession, listing_id: str, viewer_id: Optional[uuid.UUID] = None
 ) -> dict:
     """Get a single listing with viewer-specific flags."""
-    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    result = await db.execute(select(Listing).where(Listing.id == (uuid.UUID(listing_id) if isinstance(listing_id, str) else listing_id)))
     listing = result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
@@ -177,6 +177,7 @@ async def get_listing(
         "listing_plan": listing.listing_plan,
         "is_boosted": listing.is_boosted,
         "boost_expires_at": listing.boost_expires_at,
+        "status": listing.status,
         "is_active": listing.is_active,
         "is_verified": listing.is_verified,
         "expires_at": listing.expires_at,
@@ -194,28 +195,41 @@ async def get_listing(
 
 async def get_listings(
     db: AsyncSession, filters: SearchFilters, viewer_id: Optional[uuid.UUID] = None
-) -> List[dict]:
+) -> dict:
     """Get listings with filters, sorting, and pagination."""
-    query = select(Listing).where(and_(Listing.is_active == True, Listing.status == "approved"))
+    base_where_clauses = [Listing.is_active == True, Listing.status == "approved"]
 
     if filters.listing_type and filters.listing_type != "both":
-        query = query.where(Listing.listing_type == filters.listing_type)
+        base_where_clauses.append(Listing.listing_type == filters.listing_type)
     if filters.city:
-        query = query.where(func.lower(Listing.city) == filters.city.lower())
+        base_where_clauses.append(func.lower(Listing.city) == filters.city.lower())
     if filters.area:
-        query = query.where(func.lower(Listing.area).contains(filters.area.lower()))
+        base_where_clauses.append(func.lower(Listing.area).contains(filters.area.lower()))
     if filters.property_type:
-        query = query.where(Listing.property_type.in_(filters.property_type))
+        base_where_clauses.append(Listing.property_type.in_(filters.property_type))
     if filters.gender_preference:
-        query = query.where(Listing.gender_preference == filters.gender_preference)
+        base_where_clauses.append(Listing.gender_preference == filters.gender_preference)
     if filters.furnishing:
-        query = query.where(Listing.furnishing.in_(filters.furnishing))
+        base_where_clauses.append(Listing.furnishing.in_(filters.furnishing))
     if filters.min_rent:
-        query = query.where(Listing.rent >= filters.min_rent)
+        base_where_clauses.append(Listing.rent >= filters.min_rent)
     if filters.max_rent:
-        query = query.where(Listing.rent <= filters.max_rent)
+        base_where_clauses.append(Listing.rent <= filters.max_rent)
     if filters.parking:
-        query = query.where(Listing.parking.in_(filters.parking))
+        base_where_clauses.append(Listing.parking.in_(filters.parking))
+
+    where_clause = and_(*base_where_clauses)
+
+    # Run COUNT query first
+    count_query = select(func.count(Listing.id)).where(where_clause)
+    total_result = await db.execute(count_query)
+    total_count = total_result.scalar() or 0
+
+    import math
+    total_pages = math.ceil(total_count / filters.page_size) if total_count > 0 else 1
+
+    # Run actual SELECT query
+    query = select(Listing).where(where_clause)
 
     # Boosted listings first, then sort
     if filters.sort_by == "rent_asc":
@@ -247,11 +261,11 @@ async def get_listings(
         saved_listing_ids = set(save_result.scalars().all())
 
     # Build response list
-    response = []
+    items_response = []
     for listing in listings:
         is_saved = listing.id in saved_listing_ids
 
-        response.append({
+        items_response.append({
             "id": listing.id,
             "owner_id": listing.owner_id,
             "listing_type": listing.listing_type,
@@ -274,6 +288,7 @@ async def get_listings(
             "listing_plan": listing.listing_plan,
             "is_boosted": listing.is_boosted,
             "boost_expires_at": listing.boost_expires_at,
+            "status": listing.status,
             "is_active": listing.is_active,
             "is_verified": listing.is_verified,
             "expires_at": listing.expires_at,
@@ -288,7 +303,13 @@ async def get_listings(
             "owner_phone": None,
         })
 
-    return response
+    return {
+        "items": items_response,
+        "total": total_count,
+        "page": filters.page,
+        "page_size": filters.page_size,
+        "total_pages": total_pages,
+    }
 
 
 async def get_owner_listings(db: AsyncSession, owner_id: uuid.UUID) -> List[dict]:
@@ -322,6 +343,7 @@ async def get_owner_listings(db: AsyncSession, owner_id: uuid.UUID) -> List[dict
             "listing_plan": listing.listing_plan,
             "is_boosted": listing.is_boosted,
             "boost_expires_at": listing.boost_expires_at,
+            "status": listing.status,
             "is_active": listing.is_active,
             "is_verified": listing.is_verified,
             "expires_at": listing.expires_at,
@@ -342,7 +364,7 @@ async def update_listing(
     db: AsyncSession, listing_id: str, data: dict, owner_id: uuid.UUID
 ) -> dict:
     """Update a listing owned by the current user."""
-    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    result = await db.execute(select(Listing).where(Listing.id == (uuid.UUID(listing_id) if isinstance(listing_id, str) else listing_id)))
     listing = result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
@@ -359,7 +381,7 @@ async def update_listing(
 
 async def delete_listing(db: AsyncSession, listing_id: str, owner_id: uuid.UUID):
     """Delete a listing owned by the current user."""
-    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    result = await db.execute(select(Listing).where(Listing.id == (uuid.UUID(listing_id) if isinstance(listing_id, str) else listing_id)))
     listing = result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
@@ -371,10 +393,12 @@ async def delete_listing(db: AsyncSession, listing_id: str, owner_id: uuid.UUID)
 
 async def record_view(db: AsyncSession, listing_id: str, viewer_id: Optional[uuid.UUID] = None):
     """Record a listing view and increment count."""
-    view = ListingView(listing_id=listing_id, viewer_id=viewer_id)
+    import uuid
+    uid = uuid.UUID(listing_id) if isinstance(listing_id, str) else listing_id
+    view = ListingView(listing_id=uid, viewer_id=viewer_id)
     db.add(view)
     await db.execute(
-        update(Listing).where(Listing.id == listing_id).values(view_count=Listing.view_count + 1)
+        update(Listing).where(Listing.id == uid).values(view_count=Listing.view_count + 1)
     )
     await db.flush()
 
@@ -413,6 +437,7 @@ async def get_pending_listings(db: AsyncSession) -> List[dict]:
             "listing_plan": listing.listing_plan,
             "is_boosted": listing.is_boosted,
             "boost_expires_at": listing.boost_expires_at,
+            "status": listing.status,
             "is_active": listing.is_active,
             "is_verified": listing.is_verified,
             "status": listing.status,
@@ -431,27 +456,26 @@ async def get_pending_listings(db: AsyncSession) -> List[dict]:
 
 
 async def approve_listing(db: AsyncSession, listing_id: str) -> dict:
-    """Approve a listing (admin only)."""
-    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    import uuid
+    uid = uuid.UUID(listing_id) if isinstance(listing_id, str) else listing_id
+    result = await db.execute(select(Listing).where(Listing.id == uid))
     listing = result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
     listing.status = "approved"
     await db.flush()
-    await db.refresh(listing)
-    return {"id": listing.id, "status": listing.status}
-
+    return {"id": listing.id, "status": "approved"}
 
 async def reject_listing(db: AsyncSession, listing_id: str) -> dict:
-    """Reject a listing (admin only)."""
-    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    import uuid
+    uid = uuid.UUID(listing_id) if isinstance(listing_id, str) else listing_id
+    result = await db.execute(select(Listing).where(Listing.id == uid))
     listing = result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
     listing.status = "rejected"
     await db.flush()
-    await db.refresh(listing)
-    return {"id": listing.id, "status": listing.status}
+    return {"id": listing.id, "status": "rejected"}
 
 
 async def expire_old_listings():

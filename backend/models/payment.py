@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import UUID
+from sqlalchemy import JSON
 from sqlalchemy import ForeignKey
 from backend.db.database import Base
 
@@ -17,5 +18,5 @@ class Payment(Base):
     razorpay_order_id = Column(Text, nullable=True)
     razorpay_payment_id = Column(Text, nullable=True)
     status = Column(String(20), default="pending")  # pending | success | failed | refunded
-    extra_data = Column("metadata", JSONB, default=dict)
+    extra_data = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

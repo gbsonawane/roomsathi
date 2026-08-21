@@ -30,14 +30,14 @@ async def unlock_contact(
         select(ContactUnlock).where(
             and_(
                 ContactUnlock.seeker_id == current_user.id,
-                ContactUnlock.listing_id == body.listing_id,
+                ContactUnlock.listing_id == uuid.UUID(body.listing_id),
             )
         )
     )
     existing = result.scalar_one_or_none()
 
     # Get listing + owner info
-    listing_result = await db.execute(select(Listing).where(Listing.id == body.listing_id))
+    listing_result = await db.execute(select(Listing).where(Listing.id == uuid.UUID(body.listing_id)))
     listing = listing_result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
@@ -53,11 +53,19 @@ async def unlock_contact(
         }
 
     # Check if user has active monthly plan
-    if current_user.plan_type == "monthly" and current_user.plan_expires_at and current_user.plan_expires_at > datetime.now(timezone.utc):
+    now_utc = datetime.now(timezone.utc)
+    is_valid_plan = False
+    if current_user.plan_type == "monthly" and current_user.plan_expires_at:
+        expires = current_user.plan_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        is_valid_plan = expires > now_utc
+
+    if is_valid_plan:
         # Auto-unlock with plan
         unlock = ContactUnlock(
             seeker_id=current_user.id,
-            listing_id=body.listing_id,
+            listing_id=uuid.UUID(body.listing_id),
             unlock_type="plan",
             amount_paid=0,
         )
@@ -82,7 +90,7 @@ async def unlock_contact(
     else:
         raise BadRequestError("Invalid unlock_type. Use 'single' or 'plan'")
 
-    order = create_razorpay_order(amount, receipt=f"unlock_{current_user.id}_{body.listing_id}")
+    order = create_razorpay_order(amount, receipt=f"unlock_{current_user.id}_{uuid.UUID(body.listing_id)}")
 
     # Save pending payment
     payment = Payment(
@@ -91,7 +99,7 @@ async def unlock_contact(
         amount=amount // 100,
         razorpay_order_id=order["id"],
         status="pending",
-        extra_data={"listing_id": body.listing_id, "unlock_type": body.unlock_type},
+        extra_data={"listing_id": uuid.UUID(body.listing_id), "unlock_type": body.unlock_type},
     )
     db.add(payment)
     await db.flush()
@@ -129,7 +137,7 @@ async def confirm_unlock(
         payment.status = "success"
 
     # Get listing + owner
-    listing_result = await db.execute(select(Listing).where(Listing.id == body.listing_id))
+    listing_result = await db.execute(select(Listing).where(Listing.id == uuid.UUID(body.listing_id)))
     listing = listing_result.scalar_one_or_none()
     if not listing:
         raise NotFoundError("Listing not found")
@@ -140,7 +148,7 @@ async def confirm_unlock(
     # Create unlock record
     unlock = ContactUnlock(
         seeker_id=current_user.id,
-        listing_id=body.listing_id,
+        listing_id=uuid.UUID(body.listing_id),
         unlock_type=body.unlock_type,
         amount_paid=payment.amount if payment else 0,
         payment_id=body.razorpay_payment_id,

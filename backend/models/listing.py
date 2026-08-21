@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone, date
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, Text, Date, Numeric, ARRAY
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, Text, Date, Numeric, JSON
+from sqlalchemy import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy import ForeignKey
 from backend.db.database import Base
@@ -32,7 +32,7 @@ class Listing(Base):
     available_from = Column(Date, nullable=False)
     description = Column(Text, nullable=True)
 
-    photos = Column(ARRAY(Text), default=list)
+    photos = Column(JSON, default=list)
 
     listing_plan = Column(String(20), nullable=False, default="basic")
     is_boosted = Column(Boolean, default=False)

@@ -130,6 +130,14 @@ class ListingResponse(BaseModel):
         from_attributes = True
 
 
+class PaginatedListings(BaseModel):
+    items: List[ListingResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 class SearchFilters(BaseModel):
     listing_type: Optional[str] = None
     city: Optional[str] = None

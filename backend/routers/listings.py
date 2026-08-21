@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.dependencies import get_db, get_current_user, get_current_user_optional
-from backend.schemas.listing import ListingCreate, ListingResponse, SearchFilters
+from backend.schemas.listing import ListingCreate, ListingResponse, SearchFilters, PaginatedListings
 from backend.services.listing_service import (
     create_listing, get_listing, get_listings, get_owner_listings,
     update_listing, delete_listing, record_view,
@@ -16,7 +16,7 @@ import uuid
 router = APIRouter(prefix="/listings", tags=["listings"])
 
 
-@router.get("/", response_model=List[ListingResponse])
+@router.get("/", response_model=PaginatedListings)
 async def list_listings(
     listing_type: Optional[str] = None,
     city: Optional[str] = None,
@@ -38,11 +38,13 @@ async def list_listings(
     """Get listings with optional filters."""
     # If owner=me, return owner's listings
     if owner == "me" and current_user:
-        return await get_owner_listings(db, current_user.id)
+        items = await get_owner_listings(db, current_user.id)
+        return {"items": items, "total": len(items), "page": 1, "page_size": max(len(items), 1), "total_pages": 1}
 
     # Admin-only: return pending listings
     if status == "pending" and current_user and current_user.role == "admin":
-        return await get_pending_listings(db)
+        items = await get_pending_listings(db)
+        return {"items": items, "total": len(items), "page": 1, "page_size": max(len(items), 1), "total_pages": 1}
 
     filters = SearchFilters(
         listing_type=listing_type,

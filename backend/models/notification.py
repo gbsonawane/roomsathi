@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Boolean, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import UUID
+from sqlalchemy import JSON
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 from backend.db.database import Base
@@ -16,7 +17,7 @@ class Notification(Base):
     title = Column(Text, nullable=False)
     body = Column(Text, nullable=True)
     is_read = Column(Boolean, default=False)
-    extra_data = Column("metadata", JSONB, default=dict)
+    extra_data = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="notifications")

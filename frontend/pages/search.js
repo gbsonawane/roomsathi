@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
 import { getListings, parseSearchQuery } from "../lib/api";
@@ -23,6 +23,19 @@ export default function SearchPage() {
   const [nlParsing, setNlParsing] = useState(false);
   const [nlError, setNlError] = useState("");
 
+  // Map view states
+  const [viewMode, setViewMode] = useState("list"); // "list" | "map"
+  const mapScriptLoaded = useRef(false);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markersRef = useRef([]);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const PAGE_SIZE = 12;
+
   // Listings & UI status
   const [listings, setListings] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -41,7 +54,11 @@ export default function SearchPage() {
     );
   };
 
-  const fetchResults = async () => {
+  const fetchResults = async (pageOverride, modeOverride = viewMode) => {
+    const isMap = modeOverride === "map";
+    const activePage = isMap ? 1 : (typeof pageOverride === "number" ? pageOverride : currentPage);
+    const activeSize = isMap ? 100 : PAGE_SIZE;
+
     setError("");
     setSearching(true);
     try {
@@ -53,6 +70,8 @@ export default function SearchPage() {
         max_rent: maxRent ? parseInt(maxRent) : undefined,
         sort_by: sortBy,
         listing_type: listingType,
+        page: activePage,
+        page_size: activeSize,
       };
 
       if (selectedPropertyTypes.length > 0) {
@@ -60,7 +79,12 @@ export default function SearchPage() {
       }
 
       const results = await getListings(payload);
-      setListings(results);
+      setListings(results.items);
+
+      if (!isMap) {
+        setTotalPages(results.total_pages);
+        setTotalCount(results.total);
+      }
     } catch (err) {
       setError(err.message || "Failed to fetch search results");
     } finally {
@@ -71,13 +95,15 @@ export default function SearchPage() {
   // Run search on load and whenever filters change
   useEffect(() => {
     if (user) {
-      fetchResults();
+      setCurrentPage(1);
+      fetchResults(1, "list");
     }
   }, [user, listingType, sortBy]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchResults();
+    setCurrentPage(1);
+    fetchResults(1, "list");
   };
 
   const handleReset = () => {
@@ -93,7 +119,8 @@ export default function SearchPage() {
     setError("");
     // Trigger immediate reload with defaults
     setTimeout(() => {
-      fetchResults();
+      setCurrentPage(1);
+      fetchResults(1, "list");
     }, 50);
   };
 
@@ -129,7 +156,10 @@ export default function SearchPage() {
       if (parsed.max_rent) setMaxRent(String(parsed.max_rent));
 
       // Trigger search with the newly set filters after state settles
-      setTimeout(() => fetchResults(), 50);
+      setTimeout(() => {
+        setCurrentPage(1);
+        fetchResults(1, "list");
+      }, 50);
     } catch (err) {
       setNlError("Search failed. Try again.");
     } finally {
@@ -144,6 +174,131 @@ export default function SearchPage() {
       </div>
     );
   }
+
+  const goToPage = (page) => {
+    setCurrentPage(page);
+    fetchResults(page, "list");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const getPageNumbers = () => {
+    if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, currentPage + 2);
+    if (currentPage <= 2) end = 5;
+    if (currentPage >= totalPages - 1) start = totalPages - 4;
+    const pages = [];
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
+
+  const loadGoogleMapsScript = (callback) => {
+    if (typeof window === "undefined") return;
+    if (window.google?.maps) {
+      callback();
+      return;
+    }
+    const existingScript = document.getElementById("googleMapsScript");
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`;
+      script.id = "googleMapsScript";
+      document.body.appendChild(script);
+      script.onload = () => {
+        if (callback) callback();
+      };
+    } else if (callback) {
+      existingScript.addEventListener("load", () => callback());
+    }
+  };
+
+  function updateMarkers(listingsData) {
+    // Clear existing markers
+    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current = [];
+
+    listingsData.forEach(listing => {
+      if (!listing.latitude || !listing.longitude) return;
+
+      const marker = new window.google.maps.Marker({
+        position: { lat: listing.latitude, lng: listing.longitude },
+        map: mapInstanceRef.current,
+        title: listing.title || listing.area,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: listing.is_boosted ? "#f59e0b" : "#065f46",
+          fillOpacity: 1,
+          strokeColor: "white",
+          strokeWeight: 2,
+        }
+      });
+
+      // Info window on marker click
+      const infoContent = `
+        <div style="max-width:220px;font-family:sans-serif;padding:4px">
+          <strong style="font-size:14px">
+            ₹${listing.rent.toLocaleString('en-IN')}/mo
+          </strong>
+          <p style="margin:4px 0;font-size:12px;color:#4b5563">
+            ${(listing.property_type || '').toUpperCase()} · ${listing.area}
+          </p>
+          <p style="margin:4px 0;font-size:12px">
+            ${listing.furnishing} · ${listing.gender_preference}
+          </p>
+          <a href="/listing/${listing.id}"
+             style="color:#065f46;font-size:12px;font-weight:600">
+            View listing →
+          </a>
+        </div>
+      `;
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: infoContent
+      });
+      marker.addListener("click", () => {
+        infoWindow.open(mapInstanceRef.current, marker);
+      });
+
+      markersRef.current.push(marker);
+    });
+  }
+
+  useEffect(() => {
+    if (viewMode !== "map") {
+      mapInstanceRef.current = null;
+      return;
+    }
+    if (mapScriptLoaded.current && mapInstanceRef.current) {
+      updateMarkers(listings);
+      return;
+    }
+    loadGoogleMapsScript(() => {
+      mapScriptLoaded.current = true;
+      if (!mapRef.current) return;
+      const map = new window.google.maps.Map(mapRef.current, {
+        center: { lat: 18.5204, lng: 73.8567 },
+        zoom: 12,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      });
+      mapInstanceRef.current = map;
+      updateMarkers(listings);
+    });
+  }, [viewMode, listings]);
+
+  useEffect(() => {
+    return () => {
+      markersRef.current.forEach(m => m.setMap(null));
+    };
+  }, []);
+
+  const handleModeSwitch = (mode) => {
+    if (viewMode === mode) return;
+    setViewMode(mode);
+    fetchResults(mode === "map" ? 1 : currentPage, mode);
+  };
+
 
   const propertyTypes = [
     { value: "1rk", label: "1 RK" },
@@ -352,21 +507,56 @@ export default function SearchPage() {
             {/* Sorting & Stats Bar */}
             <div className="results-header-row">
               <span className="results-count">
-                {searching ? "Searching listings..." : `${listings.length} listings found`}
+                {searching ? "Searching listings..." : `${totalCount} listings found`}
               </span>
 
-              <div className="sort-selector">
-                <label htmlFor="sort-dropdown" style={{ margin: 0, fontWeight: 500, fontSize: "0.85rem", color: "#6b7280" }}>Sort by:</label>
-                <select
-                  id="sort-dropdown"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  style={{ width: "auto", padding: "6px 12px", fontSize: "0.85rem", borderRadius: "8px" }}
-                >
-                  <option value="newest">Newest First</option>
-                  <option value="rent_asc">Rent: Low to High</option>
-                  <option value="rent_desc">Rent: High to Low</option>
-                </select>
+              <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleModeSwitch("list")}
+                    style={{
+                      background: viewMode === "list" ? "#065f46" : "transparent",
+                      color: viewMode === "list" ? "white" : "#065f46",
+                      border: "1px solid #065f46",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer"
+                    }}
+                  >
+                    ≡ List
+                  </button>
+                  <button
+                    onClick={() => handleModeSwitch("map")}
+                    style={{
+                      background: viewMode === "map" ? "#065f46" : "transparent",
+                      color: viewMode === "map" ? "white" : "#065f46",
+                      border: "1px solid #065f46",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      cursor: "pointer"
+                    }}
+                  >
+                    🗺 Map
+                  </button>
+                </div>
+
+                <div className="sort-selector">
+                  <label htmlFor="sort-dropdown" style={{ margin: 0, fontWeight: 500, fontSize: "0.85rem", color: "#6b7280" }}>Sort by:</label>
+                  <select
+                    id="sort-dropdown"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    style={{ width: "auto", padding: "6px 12px", fontSize: "0.85rem", borderRadius: "8px" }}
+                  >
+                    <option value="newest">Newest First</option>
+                    <option value="rent_asc">Rent: Low to High</option>
+                    <option value="rent_desc">Rent: High to Low</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -391,15 +581,37 @@ export default function SearchPage() {
                 ))}
               </div>
             ) : listings.length > 0 ? (
-              <div className="listings-grid">
-                {listings.map(listing => (
-                  <ListingCard
-                    key={listing.id}
-                    listing={listing}
-                    token={token}
-                  />
-                ))}
-              </div>
+              <>
+                {viewMode === "list" ? (
+                  <div className="listings-grid">
+                    {listings.map(listing => (
+                      <ListingCard
+                        key={listing.id}
+                        listing={listing}
+                        token={token}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div
+                      ref={mapRef}
+                      style={{
+                        width: "100%",
+                        height: "520px",
+                        borderRadius: "16px",
+                        border: "1px solid #e5e7eb",
+                        background: "#f3f4f6",
+                      }}
+                    />
+                    {listings.filter(l => !l.latitude || !l.longitude).length > 0 && (
+                      <p style={{ textAlign: "center", fontSize: "12px", color: "#6b7280", marginTop: "8px" }}>
+                        Note: {listings.filter(l => !l.latitude || !l.longitude).length} listings are not shown on map (no location data)
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
               <div className="empty-results card">
                 <div className="empty-icon">🔍</div>
@@ -408,6 +620,42 @@ export default function SearchPage() {
                 <button className="primary" onClick={handleReset} style={{ marginTop: "12px" }}>
                   Clear All Filters
                 </button>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && !searching && listings.length > 0 && viewMode === "list" && (
+              <div className="pagination-container">
+                <span className="pagination-showing">
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, totalCount)} of {totalCount} listings
+                </span>
+                <div className="pagination-row">
+                  <button
+                    className="page-pill"
+                    disabled={currentPage === 1}
+                    onClick={() => goToPage(currentPage - 1)}
+                  >
+                    ← Prev
+                  </button>
+
+                  {getPageNumbers().map(p => (
+                    <button
+                      key={p}
+                      className={`page-pill ${p === currentPage ? "active" : ""}`}
+                      onClick={() => goToPage(p)}
+                    >
+                      {p}
+                    </button>
+                  ))}
+
+                  <button
+                    className="page-pill"
+                    disabled={currentPage === totalPages}
+                    onClick={() => goToPage(currentPage + 1)}
+                  >
+                    Next →
+                  </button>
+                </div>
               </div>
             )}
 
@@ -540,6 +788,52 @@ export default function SearchPage() {
         .empty-results h3 {
           margin: 0;
           color: #111827;
+        }
+        .pagination-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          margin-top: 24px;
+          padding-top: 16px;
+          border-top: 1px solid #e5e7eb;
+        }
+        .pagination-showing {
+          font-size: 13px;
+          color: #6b7280;
+        }
+        .pagination-row {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+        .page-pill {
+          min-width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          border: 1px solid #e5e7eb;
+          font-size: 14px;
+          cursor: pointer;
+          background: white;
+          color: #374151;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 10px;
+          transition: all 0.2s;
+        }
+        .page-pill:hover:not(:disabled) {
+          border-color: #d1d5db;
+          background: #f9fafb;
+        }
+        .page-pill.active {
+          background: #065f46;
+          color: white;
+          border-color: #065f46;
+        }
+        .page-pill:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
         }
         .empty-results p {
           color: #6b7280;
