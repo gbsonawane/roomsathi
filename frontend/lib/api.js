@@ -44,6 +44,13 @@ export async function devLogin(phone, full_name) {
   });
 }
 
+export async function googleLogin(idToken) {
+  return request("/auth/google", {
+    method: "POST",
+    body: { token: idToken },
+  });
+}
+
 export async function getMe(token) {
   return request("/users/me", { token });
 }

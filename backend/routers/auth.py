@@ -1,5 +1,6 @@
 import logging
 import json
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
@@ -8,7 +9,7 @@ from slowapi.util import get_remote_address
 from backend.core.config import settings
 from backend.db.dependencies import get_db
 from backend.core.security import generate_otp, create_access_token
-from backend.schemas.auth import SendOTPRequest, VerifyOTPRequest, TokenResponse, UserBrief, AdminLoginRequest
+from backend.schemas.auth import SendOTPRequest, VerifyOTPRequest, TokenResponse, UserBrief, AdminLoginRequest, GoogleAuthRequest
 from backend.services.auth_service import send_otp_sms, save_otp, verify_otp_code, get_or_create_user, send_otp_email
 from sqlalchemy import select
 from backend.models.user import User
@@ -89,6 +90,64 @@ async def dev_login(body: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
     if settings.ENVIRONMENT != "development":
         raise HTTPException(status_code=403, detail="Not allowed in production environment")
     user = await get_or_create_user(db, phone=body.phone, full_name=body.full_name)
+    token = create_access_token({"sub": str(user.id), "role": user.role})
+    user_brief = UserBrief(
+        id=user.id,
+        full_name=user.full_name,
+        phone=user.phone,
+        email=user.email,
+        role=user.role,
+        is_verified=user.is_verified,
+        plan_type=user.plan_type,
+        avatar_url=user.avatar_url,
+    )
+    return TokenResponse(access_token=token, token_type="bearer", user=user_brief)
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(body: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+    """Login or register using a Google ID token. Verifies via Google tokeninfo API."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": body.token},
+                timeout=10.0,
+            )
+        if response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+
+        info = response.json()
+        if "error_description" in info:
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+
+        email = info.get("email")
+        name = info.get("name") or (email.split("@")[0] if email else "Google User")
+        picture = info.get("picture")
+
+        if not email:
+            raise HTTPException(status_code=401, detail="Google token missing email")
+
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="Could not reach Google verification service")
+
+    # Find or create user by email
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            email=email,
+            full_name=name,
+            phone=None,
+            is_verified=True,
+            role="seeker",
+            avatar_url=picture,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
     token = create_access_token({"sub": str(user.id), "role": user.role})
     user_brief = UserBrief(
         id=user.id,

@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = ""
 
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+
     # NVIDIA NIM / AI Settings
     NVIDIA_API_KEY: str = ""
 

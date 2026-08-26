@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { devLogin, updateMe } from "../lib/api";
+import { sendOtp, verifyOtp, googleLogin, updateMe } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -11,8 +12,8 @@ export default function SignupPage() {
   const [role, setRole] = useState("seeker"); // seeker = I need a room | owner = I have a room
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpStep, setOtpStep] = useState(false); // false = details form, true = OTP entry
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,52 +26,69 @@ export default function SignupPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-      setError("Please fill in all fields.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
-      return;
-    }
-    if (!email.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
 
-    setError("");
-    setSubmitting(true);
-    try {
-      // 1. Authenticate / Register via devLogin under the hood
-      const auth = await devLogin(email.trim(), name.trim());
-      
-      // 2. Set user role via PATCH API if owner, otherwise default is seeker but we set to be sure
-      const targetRole = role === "owner" ? "owner" : "seeker";
-      const updatedUser = await updateMe({ role: targetRole }, auth.access_token);
-      
-      // Update session values
-      auth.user = {
-        ...auth.user,
-        role: updatedUser.role,
-        full_name: updatedUser.full_name,
-        email: updatedUser.email
-      };
+    if (!otpStep) {
+      // Step 1: Validate and send OTP
+      if (!name.trim() || !email.trim()) {
+        setError("Please fill in all fields.");
+        return;
+      }
+      if (!email.includes("@")) {
+        setError("Please enter a valid email address.");
+        return;
+      }
+      setError("");
+      setSubmitting(true);
+      try {
+        await sendOtp(email.trim());
+        setOtpStep(true);
+      } catch (err) {
+        setError(err.message || "Failed to send OTP. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+    } else {
+      // Step 2: Verify OTP and create account
+      if (!otp.trim()) {
+        setError("Please enter the OTP sent to your email.");
+        return;
+      }
+      setError("");
+      setSubmitting(true);
+      try {
+        // 1. Verify OTP and get auth tokens (creates user if new)
+        const auth = await verifyOtp(email.trim(), otp.trim(), name.trim());
 
-      // 3. Store login state
-      await login(auth);
-      
-      // 4. Redirect to home dashboard
-      router.push("/home");
-    } catch (err) {
-      setError(err.message || "Failed to create account. Please try again.");
-    } finally {
-      setSubmitting(false);
+        // 2. Set user role via PATCH API
+        const targetRole = role === "owner" ? "owner" : "seeker";
+        const updatedUser = await updateMe({ role: targetRole }, auth.access_token);
+
+        // 3. Merge updated role into auth object
+        auth.user = { ...auth.user, role: updatedUser.role, full_name: updatedUser.full_name, email: updatedUser.email };
+
+        // 4. Store login state
+        await login(auth);
+
+        // 5. Redirect to home
+        router.push("/home");
+      } catch (err) {
+        setError(err.message || "Failed to create account. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      const auth = await googleLogin(credentialResponse.credential);
+      await login(auth);
+      router.push("/home");
+    } catch (err) {
+      setError("Google sign-up failed. Please try again.");
+    }
+  };
+
 
   return (
     <div className="auth-split-container">
@@ -166,66 +184,83 @@ export default function SignupPage() {
             <form className="auth-form" onSubmit={handleSubmit}>
               {error && <div className="error-message-banner">{error}</div>}
 
-              {/* Floating Input Group: Full Name */}
-              <div className="floating-group">
-                <input
-                  type="text"
-                  id="name"
-                  className={name ? "has-val" : ""}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  placeholder=" "
-                />
-                <label htmlFor="name">Full Name</label>
-              </div>
+              {!otpStep ? (
+                <>
+                  {/* Floating Input Group: Full Name */}
+                  <div className="floating-group">
+                    <input
+                      type="text"
+                      id="name"
+                      className={name ? "has-val" : ""}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                      placeholder=" "
+                    />
+                    <label htmlFor="name">Full Name</label>
+                  </div>
 
-              {/* Floating Input Group: Email */}
-              <div className="floating-group">
-                <input
-                  type="email"
-                  id="email"
-                  className={email ? "has-val" : ""}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder=" "
-                />
-                <label htmlFor="email">Email Address</label>
-              </div>
-
-              {/* Floating Input Group: Password */}
-              <div className="floating-group">
-                <input
-                  type="password"
-                  id="password"
-                  className={password ? "has-val" : ""}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  placeholder=" "
-                />
-                <label htmlFor="password">Password</label>
-              </div>
-
-              {/* Floating Input Group: Confirm Password */}
-              <div className="floating-group">
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  className={confirmPassword ? "has-val" : ""}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  placeholder=" "
-                />
-                <label htmlFor="confirmPassword">Confirm Password</label>
-              </div>
+                  {/* Floating Input Group: Email */}
+                  <div className="floating-group">
+                    <input
+                      type="email"
+                      id="email"
+                      className={email ? "has-val" : ""}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      placeholder=" "
+                      autoComplete="email"
+                    />
+                    <label htmlFor="email">Email Address</label>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="otp-hint">
+                    We sent a code to <strong>{email}</strong>.
+                    <button type="button" className="link-btn" onClick={() => { setOtpStep(false); setOtp(""); setError(""); }}>
+                      &nbsp;Change email
+                    </button>
+                  </p>
+                  <div className="floating-group">
+                    <input
+                      type="text"
+                      id="otp"
+                      className={otp ? "has-val" : ""}
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value)}
+                      required
+                      placeholder=" "
+                      inputMode="numeric"
+                      maxLength={6}
+                      autoComplete="one-time-code"
+                    />
+                    <label htmlFor="otp">Enter OTP</label>
+                  </div>
+                </>
+              )}
 
               <button type="submit" className="primary-auth-btn" disabled={submitting}>
-                {submitting ? "Creating Account..." : "Create My Account"}
+                {submitting
+                  ? (otpStep ? "Creating Account..." : "Sending OTP...")
+                  : (otpStep ? "Verify & Create Account" : "Send OTP")}
               </button>
             </form>
+
+            {/* Google Sign-Up */}
+            <div className="divider-row" style={{ margin: "20px 0" }}>
+              <span>or sign up with</span>
+            </div>
+            <div className="social-row">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError("Google sign-up failed.")}
+                width="100%"
+                text="continue_with"
+                shape="pill"
+              />
+            </div>
 
             {/* Trust Badges Row */}
             <div className="trust-badges-row">
@@ -563,6 +598,34 @@ export default function SignupPage() {
           font-size: 0.9rem;
           margin-bottom: 20px;
           font-weight: 500;
+        }
+
+        /* Social login row — centers the GoogleLogin button */
+        .social-row {
+          display: flex;
+          justify-content: center;
+          width: 100%;
+        }
+
+        /* OTP step helper text */
+        .otp-hint {
+          font-size: 0.88rem;
+          color: #64748b;
+          margin-bottom: 18px;
+          line-height: 1.5;
+        }
+        .link-btn {
+          background: none;
+          border: none;
+          padding: 0;
+          color: #1a3c34;
+          font-size: 0.88rem;
+          font-weight: 700;
+          cursor: pointer;
+          text-decoration: underline;
+        }
+        .link-btn:hover {
+          color: #f4a940;
         }
       `}</style>
     </div>
