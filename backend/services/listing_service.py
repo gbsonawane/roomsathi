@@ -478,17 +478,51 @@ async def reject_listing(db: AsyncSession, listing_id: str) -> dict:
     return {"id": listing.id, "status": "rejected"}
 
 
-async def expire_old_listings():
-    """Expire listings past their expiry date. Called by APScheduler."""
+async def expire_old_listings(db: Optional[AsyncSession] = None):
+    """Expire listings past their expiry date. Called by APScheduler or /cron endpoint."""
+    async def _run(session: AsyncSession):
+        await session.execute(
+            update(Listing)
+            .where(and_(Listing.expires_at < datetime.now(timezone.utc), Listing.is_active == True))
+            .values(is_active=False)
+        )
+
+    if db is not None:
+        await _run(db)
+        await db.flush()
+        return
+
     from backend.db.database import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as db:
+    async with AsyncSessionLocal() as session:
         try:
-            await db.execute(
-                update(Listing)
-                .where(and_(Listing.expires_at < datetime.now(timezone.utc), Listing.is_active == True))
-                .values(is_active=False)
-            )
-            await db.commit()
+            await _run(session)
+            await session.commit()
         except Exception:
-            await db.rollback()
+            await session.rollback()
+
+
+async def reset_daily_contacts(db: Optional[AsyncSession] = None):
+    """Reset contacts_used_today to 0 for all users at midnight."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    async def _run(session: AsyncSession):
+        await session.execute(update(User).values(contacts_used_today=0))
+
+    if db is not None:
+        await _run(db)
+        await db.flush()
+        return
+
+    from backend.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        try:
+            await _run(session)
+            await session.commit()
+            logger.info("Successfully reset contacts_used_today for all users.")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to reset contacts_used_today: {e}")

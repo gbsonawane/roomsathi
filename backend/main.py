@@ -1,38 +1,37 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
 from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.routers import auth, listings, users, unlock, boost, saved, payments, webhooks
-from backend.services.listing_service import expire_old_listings
+from backend.services.listing_service import expire_old_listings, reset_daily_contacts
+from backend.db.dependencies import get_db
+
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        environment=settings.ENVIRONMENT,
+        traces_sample_rate=0.2,
+        send_default_pii=False,
+    )
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("roomsathi")
 
 scheduler = AsyncIOScheduler()
-
-
-async def reset_daily_contacts():
-    """Reset contacts_used_today to 0 for all users at midnight."""
-    from backend.db.database import AsyncSessionLocal
-    from backend.models.user import User
-    from sqlalchemy import update
-
-    async with AsyncSessionLocal() as db:
-        try:
-            await db.execute(
-                update(User).values(contacts_used_today=0)
-            )
-            await db.commit()
-            logger.info("Successfully reset contacts_used_today for all users.")
-        except Exception as e:
-            await db.rollback()
-            logger.error(f"Failed to reset contacts_used_today: {e}")
 
 
 @asynccontextmanager
@@ -65,7 +64,7 @@ app = FastAPI(
 )
 
 # CORS
-origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
+origins = settings.ALLOWED_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -75,7 +74,6 @@ app.add_middleware(
 )
 
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
 from backend.routers.auth import limiter
 
 app.state.limiter = limiter
@@ -87,10 +85,44 @@ async def custom_rate_limit_exceeded_handler(request, exc):
         content={"detail": "Too many OTP requests. Please wait 10 minutes."},
     )
 
-# Mount uploads directory for serving photos
-uploads_dir = Path("./uploads")
-uploads_dir.mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}",
+        exc_info=exc,
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+        }
+    )
+    if settings.SENTRY_DSN:
+        sentry_sdk.capture_exception(exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong. Please try again."}
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code >= 500:
+        logger.error(
+            f"HTTP {exc.status_code} on {request.method} {request.url.path}: {exc.detail}",
+            exc_info=exc,
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=exc.headers,
+    )
+
+
+# Only mount local uploads dir when not using S3
+if settings.STORAGE_BACKEND != "s3":
+    uploads_dir = Path(settings.UPLOAD_DIR)
+    uploads_dir.mkdir(exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 # Include all routers
 app.include_router(auth.router)
@@ -113,5 +145,29 @@ async def root():
 
 
 @app.get("/health")
-async def health():
+async def health_check():
     return {"status": "ok"}
+
+
+@app.post("/cron/expire-listings")
+async def cron_expire_listings(
+    x_cron_secret: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.CRON_SECRET or x_cron_secret != settings.CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from backend.services.listing_service import expire_old_listings
+    await expire_old_listings(db)
+    return {"status": "done", "job": "expire_listings"}
+
+
+@app.post("/cron/reset-contacts")
+async def cron_reset_contacts(
+    x_cron_secret: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.CRON_SECRET or x_cron_secret != settings.CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from backend.services.listing_service import reset_daily_contacts
+    await reset_daily_contacts(db)
+    return {"status": "done", "job": "reset_contacts"}

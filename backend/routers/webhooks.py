@@ -15,40 +15,54 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 async def razorpay_webhook(request: Request):
     """Handle Razorpay webhook events."""
     try:
-        raw_body = await request.body()
-        
-        if settings.RAZORPAY_WEBHOOK_SECRET:
-            signature = request.headers.get("X-Razorpay-Signature")
-            if not signature:
-                raise HTTPException(status_code=400, detail="Missing signature")
-            
-            expected = hmac.HMAC(
-                settings.RAZORPAY_WEBHOOK_SECRET.encode(),
-                raw_body,
-                hashlib.sha256,
-            ).hexdigest()
-            
-            if not hmac.compare_digest(expected, signature):
-                raise HTTPException(status_code=400, detail="Invalid signature")
+        webhook_secret = settings.RAZORPAY_WEBHOOK_SECRET
+        if not webhook_secret:
+            logger.error("RAZORPAY_WEBHOOK_SECRET is not set — rejecting webhook call")
+            raise HTTPException(
+                status_code=500,
+                detail="Webhook not configured on server"
+            )
 
-        body = json.loads(raw_body)
-        event = body.get("event", "")
+        signature = request.headers.get("X-Razorpay-Signature")
+        if not signature:
+            logger.warning("Webhook received without signature header")
+            raise HTTPException(status_code=400, detail="Missing webhook signature")
+
+        body = await request.body()
+        expected = hmac.new(
+            webhook_secret.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected, signature):
+            logger.warning(f"Invalid webhook signature received")
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+        parsed = json.loads(body)
+        event = parsed.get("event", "")
         logger.info(f"Razorpay webhook: {event}")
 
         if event == "payment.captured":
-            payment_entity = body.get("payload", {}).get("payment", {}).get("entity", {})
+            payment_entity = parsed.get("payload", {}).get("payment", {}).get("entity", {})
             order_id = payment_entity.get("order_id")
             payment_id = payment_entity.get("id")
             logger.info(f"Payment captured: order={order_id}, payment={payment_id}")
+            # TODO(idempotency): when this webhook starts crediting payments/bookings,
+            # dedupe by payment_id/order_id so replayed payloads cannot double-credit.
+            # Deferred until webhook actually mutates payment state (currently log-only).
             # Payment confirmation is handled by the /unlock/confirm endpoint
 
         elif event == "payment.failed":
-            payment_entity = body.get("payload", {}).get("payment", {}).get("entity", {})
+            payment_entity = parsed.get("payload", {}).get("payment", {}).get("entity", {})
             logger.warning(f"Payment failed: {payment_entity.get('id')}")
 
         return {"status": "ok"}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error in {__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Something went wrong. Please try again."
+        )

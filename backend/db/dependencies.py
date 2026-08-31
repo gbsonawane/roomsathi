@@ -66,6 +66,11 @@ async def get_current_user(
         user = result.scalar_one_or_none()
         if not user:
             raise UnauthorizedError("User not found")
+        if not getattr(user, "is_active", True):
+            raise HTTPException(
+                status_code=403,
+                detail="Your account has been suspended. Contact support at support@roomsathi.in"
+            )
         return user
     except jwt.ExpiredSignatureError:
         raise UnauthorizedError("Token expired")

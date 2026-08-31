@@ -1,18 +1,22 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
-from pydantic import model_validator
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
-    ALLOWED_ORIGINS: str = "http://localhost:3000"
+    SENTRY_DSN: str = ""
+    ALLOWED_ORIGINS: list = [
+        "http://localhost:3000",
+        "https://your-app.vercel.app",  # will be overridden by env var
+    ]
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:root123@localhost:5432/roomsathi_db"
     SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
-    ADMIN_SECRET_PASSWORD: str = ""  # loaded from .env
+    ADMIN_SECRET_PASSWORD: str = ""  # bcrypt hash — generate: python -c "from backend.core.security import hash_password; print(hash_password('your-password'))"
 
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
@@ -56,13 +60,24 @@ class Settings(BaseSettings):
 
     UPLOAD_DIR: str = "./uploads"
 
-    @model_validator(mode="after")
-    def validate_secret_key(self) -> 'Settings':
-        if self.ENVIRONMENT != "development" and not self.SECRET_KEY:
-            raise ValueError("SECRET_KEY must be set in production environment")
-        if not self.SECRET_KEY:
-            self.SECRET_KEY = "roomsathi_super_secret_jwt_key_change_in_production_2024"
-        return self
+    CRON_SECRET: str = ""
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_origins(cls, v):
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
+
+    @field_validator("SECRET_KEY", mode="before")
+    @classmethod
+    def validate_secret_key(cls, v):
+        if not v or len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY must be set and at least 32 characters long. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        return v
 
     class Config:
         env_file = ".env"
