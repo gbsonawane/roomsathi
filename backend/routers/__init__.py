@@ -6,6 +6,7 @@ from backend.routers.boost import router as boost_router
 from backend.routers.saved import router as saved_router
 from backend.routers.payments import router as payments_router
 from backend.routers.webhooks import router as webhooks_router
+from backend.routers.notifications import router as notifications_router
 
 __all__ = [
     "auth_router",
@@ -16,4 +17,5 @@ __all__ = [
     "saved_router",
     "payments_router",
     "webhooks_router",
+    "notifications_router",
 ]

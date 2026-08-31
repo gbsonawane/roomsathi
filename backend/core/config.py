@@ -1,15 +1,13 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
-from pydantic import field_validator
+from typing import Optional, Any
+from pydantic import field_validator, model_validator
 
 
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     SENTRY_DSN: str = ""
-    ALLOWED_ORIGINS: list = [
-        "http://localhost:3000",
-        "https://your-app.vercel.app",  # will be overridden by env var
-    ]
+    # Any avoids pydantic-settings JSON-decoding comma-separated env values
+    ALLOWED_ORIGINS: Any = []
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:root123@localhost:5432/roomsathi_db"
     SECRET_KEY: Optional[str] = None
@@ -66,8 +64,8 @@ class Settings(BaseSettings):
     @classmethod
     def parse_origins(cls, v):
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v or []
 
     @field_validator("SECRET_KEY", mode="before")
     @classmethod
@@ -78,6 +76,15 @@ class Settings(BaseSettings):
                 "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_allowed_origins_in_production(self):
+        if self.ENVIRONMENT == "production" and not self.ALLOWED_ORIGINS:
+            raise ValueError(
+                "ALLOWED_ORIGINS must be set in production "
+                "(comma-separated list of frontend origins)."
+            )
+        return self
 
     class Config:
         env_file = ".env"

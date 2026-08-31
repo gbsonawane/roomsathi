@@ -102,7 +102,7 @@ async def send_otp_sms(phone: str, otp: str):
     if provider == "dev":
         logger.info(f"[DEV MODE] OTP for {clean_phone}: {otp}")
         print(f"\n{'='*40}")
-        print(f"  📱 [DEV MODE] OTP for {clean_phone}: {otp}")
+        print(f"  [DEV MODE] OTP for {clean_phone}: {otp}")
         print(f"{'='*40}\n")
         return
         
@@ -204,7 +204,7 @@ async def send_otp_email(email: str, otp: str):
     if provider == "dev":
         logger.info(f"[DEV MODE] Email OTP for {email}: {otp}")
         print(f"\n{'='*40}")
-        print(f"  📧 [DEV MODE] Email OTP for {email}: {otp}")
+        print(f"  [DEV MODE] Email OTP for {email}: {otp}")
         print(f"{'='*40}\n")
         return
         

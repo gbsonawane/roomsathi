@@ -11,7 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
-from backend.routers import auth, listings, users, unlock, boost, saved, payments, webhooks
+from backend.routers import auth, listings, users, unlock, boost, saved, payments, webhooks, notifications
 from backend.services.listing_service import expire_old_listings, reset_daily_contacts
 from backend.db.dependencies import get_db
 
@@ -133,6 +133,7 @@ app.include_router(boost.router)
 app.include_router(saved.router)
 app.include_router(payments.router)
 app.include_router(webhooks.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")
