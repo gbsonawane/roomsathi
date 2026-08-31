@@ -8,9 +8,33 @@
 const ADMIN_TOKEN_KEY = "rs_admin_token";
 const ADMIN_USER_KEY  = "rs_admin_user";
 
-const API = process.env.NEXT_PUBLIC_API_URL ||
-            process.env.NEXT_PUBLIC_FASTAPI_URL ||
-            "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_FASTAPI_URL || "";
+
+if (!API) {
+  const msg =
+    "[RoomSathi Admin] NEXT_PUBLIC_FASTAPI_URL (or NEXT_PUBLIC_API_URL) is not set. " +
+    "Refusing to fall back to localhost.";
+  console.error(msg);
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    if (!document.getElementById("roomsathi-admin-api-url-banner")) {
+      const banner = document.createElement("div");
+      banner.id = "roomsathi-admin-api-url-banner";
+      banner.setAttribute("role", "alert");
+      banner.style.cssText =
+        "position:fixed;bottom:0;left:0;right:0;z-index:99999;" +
+        "background:#7f1d1d;color:#fff;padding:12px 16px;font:14px/1.4 system-ui,sans-serif;" +
+        "text-align:center";
+      banner.textContent = "Admin misconfigured: backend URL env var is missing.";
+      const mount = () => {
+        if (document.body && !document.getElementById("roomsathi-admin-api-url-banner")) {
+          document.body.appendChild(banner);
+        }
+      };
+      if (document.body) mount();
+      else document.addEventListener("DOMContentLoaded", mount);
+    }
+  }
+}
 
 /* ── Storage helpers ─────────────────────────────────────────── */
 

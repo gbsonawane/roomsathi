@@ -7,9 +7,13 @@ import {
   clearAdminSession,
 } from "../lib/adminAuth";
 
-const API = process.env.NEXT_PUBLIC_API_URL ||
-            process.env.NEXT_PUBLIC_FASTAPI_URL ||
-            "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_FASTAPI_URL || "";
+
+if (!API && typeof window !== "undefined") {
+  console.error(
+    "[RoomSathi Admin] NEXT_PUBLIC_FASTAPI_URL is not set — refusing localhost fallback."
+  );
+}
 
 function apiCall(path, method = "GET", token, body) {
   return fetch(`${API}${path}`, {

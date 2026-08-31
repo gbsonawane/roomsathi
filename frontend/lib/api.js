@@ -1,4 +1,60 @@
-const API_BASE = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_FASTAPI_URL || "";
+
+function warnMissingApiBase() {
+  const msg =
+    "[RoomSathi] NEXT_PUBLIC_FASTAPI_URL is not set. " +
+    "API calls will fail. Set it in .env / Vercel env (e.g. https://your-api.up.railway.app).";
+  console.error(msg);
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    if (!document.getElementById("roomsathi-api-url-banner")) {
+      const banner = document.createElement("div");
+      banner.id = "roomsathi-api-url-banner";
+      banner.setAttribute("role", "alert");
+      banner.style.cssText =
+        "position:fixed;bottom:0;left:0;right:0;z-index:99999;" +
+        "background:#7f1d1d;color:#fff;padding:12px 16px;font:14px/1.4 system-ui,sans-serif;" +
+        "text-align:center;box-shadow:0 -4px 20px rgba(0,0,0,.25)";
+      banner.textContent =
+        "RoomSathi misconfigured: NEXT_PUBLIC_FASTAPI_URL is missing. Contact the site admin.";
+      const mount = () => {
+        if (document.body && !document.getElementById("roomsathi-api-url-banner")) {
+          document.body.appendChild(banner);
+        }
+      };
+      if (document.body) mount();
+      else document.addEventListener("DOMContentLoaded", mount);
+    }
+  }
+}
+
+if (!API_BASE) {
+  warnMissingApiBase();
+}
+
+export async function apiFetch(url, options = {}) {
+  if (!API_BASE && !String(url).startsWith("http")) {
+    warnMissingApiBase();
+    throw new Error(
+      "NEXT_PUBLIC_FASTAPI_URL is not configured — refusing to call a localhost fallback"
+    );
+  }
+  const fullUrl = String(url).startsWith("http") ? url : `${API_BASE}${url}`;
+  const res = await fetch(fullUrl, options);
+
+  if (res.status === 401) {
+    const headers = options.headers || {};
+    const hadAuth = Boolean(headers.Authorization || headers.authorization);
+    if (hadAuth && typeof window !== "undefined") {
+      localStorage.removeItem("roomsathi_access_token");
+      localStorage.removeItem("roomsathi_user");
+      const currentPath = encodeURIComponent(window.location.pathname);
+      window.location.href = `/login?reason=session_expired&next=${currentPath}`;
+      throw new Error("Session expired");
+    }
+  }
+
+  return res;
+}
 
 async function request(path, { method = "GET", body, token } = {}) {
   const headers = {};
@@ -9,7 +65,7 @@ async function request(path, { method = "GET", body, token } = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await apiFetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -82,12 +138,11 @@ export async function uploadPhotos(files, token) {
   for (let i = 0; i < files.length; i++) {
     formData.append("files", files[i]);
   }
-  const API_BASE = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
   const headers = {};
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_BASE}/listings/upload-photos`, {
+  const response = await apiFetch(`${API_BASE}/listings/upload-photos`, {
     method: "POST",
     headers,
     body: formData,
@@ -209,3 +264,15 @@ export async function chatWithAssistant(listingId, messages, listingContext, tok
   });
 }
 
+export async function getNotifications(token, unreadOnly = false) {
+  const qs = unreadOnly ? "?unread_only=true" : "";
+  return request(`/notifications${qs}`, { token });
+}
+
+export async function markNotificationRead(id, token) {
+  return request(`/notifications/${id}/read`, { method: "PATCH", token });
+}
+
+export async function markAllNotificationsRead(token) {
+  return request("/notifications/read-all", { method: "PATCH", token });
+}
