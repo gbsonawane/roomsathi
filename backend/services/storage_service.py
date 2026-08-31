@@ -42,6 +42,7 @@ async def _upload_to_s3(file_bytes: bytes, filename: str, listing_id: str) -> st
             "s3",
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name="eu-north-1",
         )
         ext = Path(filename).suffix or ".jpg"
         key = f"listings/{listing_id}/{uuid.uuid4().hex}{ext}"
@@ -54,5 +55,4 @@ async def _upload_to_s3(file_bytes: bytes, filename: str, listing_id: str) -> st
         return f"https://{settings.AWS_S3_BUCKET}.s3.amazonaws.com/{key}"
     except Exception as e:
         logger.error(f"S3 upload failed: {e}")
-        # Fallback to local
-        return await _save_local(file_bytes, filename, listing_id)
+        raise Exception("Photo upload failed. Please try again.") from e

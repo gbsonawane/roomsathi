@@ -15,6 +15,21 @@ import uuid
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
+# Magic-byte signatures for allowed image types
+_JPEG_MAGIC = b"\xff\xd8\xff"
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def _detect_image_magic(content: bytes) -> str | None:
+    """Return 'jpeg' | 'png' | 'webp' if file bytes match a known image signature."""
+    if content.startswith(_JPEG_MAGIC):
+        return "jpeg"
+    if content.startswith(_PNG_MAGIC):
+        return "png"
+    if len(content) >= 12 and content[0:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "webp"
+    return None
+
 
 @router.get("/", response_model=PaginatedListings)
 async def list_listings(
@@ -83,17 +98,17 @@ async def upload_photos(
     """Upload listing photos. Returns list of URLs."""
     urls = []
     listing_id = uuid.uuid4().hex[:12]
-    
+
     # Allowed mime types and extensions
     allowed_types = ["image/jpeg", "image/png", "image/webp"]
     allowed_exts = [".jpg", ".jpeg", ".png", ".webp"]
-    
+
     for file in files:
         # Check size (5MB = 5 * 1024 * 1024 bytes)
         content = await file.read()
         if len(content) > 5 * 1024 * 1024:
             raise BadRequestError(f"File {file.filename} is larger than the 5MB size limit")
-            
+
         content_type = file.content_type or ""
         filename = (file.filename or "").lower()
         is_valid_type = (
@@ -102,7 +117,14 @@ async def upload_photos(
         )
         if not is_valid_type:
             raise BadRequestError(f"File {file.filename} must be a JPEG, PNG, or WebP image")
-            
+
+        # Magic-byte check — reject spoofed MIME/extension
+        magic_kind = _detect_image_magic(content)
+        if magic_kind is None:
+            raise BadRequestError(
+                f"File {file.filename} content is not a valid JPEG, PNG, or WebP image"
+            )
+
         url = await save_photo(content, file.filename, listing_id)
         urls.append(url)
     return {"urls": urls}
