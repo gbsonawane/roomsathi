@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RoomSathi UX Fixture</title>
+  <style>
+    :root { --text-primary: #111827; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; overflow-x: hidden; background: #f7fafc; }
+
+    .custom-navbar {
+      background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+      position: relative;
+      margin: 16px;
+      border-radius: 20px;
+      z-index: 100;
+    }
+    .nav-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 4%;
+      gap: 16px;
+    }
+    .nav-logo { font-size: 2rem; font-weight: 900; text-decoration: none; color: white; }
+    .desktop-nav { display: flex; align-items: center; gap: 16px; }
+    .nav-link { color: rgba(255,255,255,0.85); text-decoration: none; font-weight: 700; }
+    .hamburger-btn {
+      display: none !important;
+      background: none; border: none; cursor: pointer; padding: 4px; color: white; font-size: 24px;
+    }
+    .mobile-nav-controls { display: none !important; align-items: center; gap: 12px; }
+    .bell-link { position: relative; display: inline-flex; color: white; text-decoration: none; }
+    .badge {
+      position: absolute; top: -6px; right: -6px; background: #ef4444; color: white;
+      font-size: 10px; min-width: 16px; height: 16px; border-radius: 999px;
+      display: flex; align-items: center; justify-content: center; padding: 0 3px;
+    }
+    .mobile-menu {
+      display: none;
+      position: absolute; top: 100%; left: 0; right: 0; background: white;
+      border-top: 1px solid #e5e7eb; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      flex-direction: column; z-index: 100;
+    }
+    .mobile-menu.open { display: flex; }
+    .mobile-menu a, .mobile-menu button {
+      padding: 14px 20px; font-size: 16px; color: var(--text-primary);
+      text-decoration: none; border: none; border-bottom: 1px solid #f3f4f6;
+      background: none; text-align: left; cursor: pointer;
+    }
+
+    @media (max-width: 768px) {
+      .desktop-nav { display: none !important; }
+      .hamburger-btn { display: block !important; }
+      .mobile-nav-controls { display: flex !important; }
+      .listings-grid { grid-template-columns: 1fr !important; }
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .skeleton-shimmer {
+      width: 100%; height: 16px;
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 4px;
+    }
+    .skeleton-card {
+      background: white; border: 1px solid #e5e7eb; border-radius: 12px;
+      padding: 16px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .listings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      padding: 16px;
+    }
+    .empty-state { padding: 48px; text-align: center; color: #6b7280; }
+    .error-state { padding: 40px; text-align: center; color: #dc2626; }
+    .notification-row.unread {
+      border-left: 3px solid #065f46; background: #f0fdf4; padding: 14px 16px;
+    }
+    .notification-row.read { background: white; padding: 14px 16px; border-bottom: 1px solid #f3f4f6; }
+  </style>
+</head>
+<body>
+  <nav class="custom-navbar" id="nav" data-logged-in="true">
+    <div class="nav-container">
+      <a class="nav-logo" href="/home">RoomSathi</a>
+      <div class="desktop-nav" id="desktop-nav">
+        <a class="nav-link" href="/home">Dashboard</a>
+        <a class="nav-link" href="/search">Search</a>
+        <a class="nav-link" href="/create-listing">Post a Room</a>
+        <a class="bell-link" href="/notifications" id="desktop-bell" aria-label="Notifications">
+          🔔
+          <span class="badge" id="desktop-badge" style="display:none">0</span>
+        </a>
+      </div>
+      <div class="desktop-nav" id="desktop-user">
+        <a href="/profile">Profile</a>
+      </div>
+      <div class="mobile-nav-controls">
+        <a class="bell-link" href="/notifications" id="mobile-bell" aria-label="Notifications">
+          🔔
+          <span class="badge" id="mobile-badge" style="display:none">0</span>
+        </a>
+        <button
+          class="hamburger-btn"
+          id="hamburger"
+          aria-label="Open menu"
+          aria-expanded="false"
+        >☰</button>
+      </div>
+    </div>
+    <div class="mobile-menu" id="mobile-menu">
+      <a href="/search">Search rooms</a>
+      <a href="/create-listing">Post a room</a>
+      <a href="/notifications" id="mobile-notif-link">Notifications</a>
+      <a href="/profile">My profile</a>
+      <button type="button" id="logout-btn" style="color:#ef4444">Log out</button>
+    </div>
+  </nav>
+
+  <main id="main">
+    <section id="loading-view" class="listings-grid" aria-label="Loading skeletons">
+      <div class="skeleton-card"><div class="skeleton-shimmer" style="height:180px"></div><div class="skeleton-shimmer"></div></div>
+      <div class="skeleton-card"><div class="skeleton-shimmer" style="height:180px"></div><div class="skeleton-shimmer"></div></div>
+      <div class="skeleton-card"><div class="skeleton-shimmer" style="height:180px"></div><div class="skeleton-shimmer"></div></div>
+    </section>
+    <section id="content-view" class="listings-grid" style="display:none" aria-label="Listings">
+      <article class="skeleton-card">Listing A</article>
+      <article class="skeleton-card">Listing B</article>
+    </section>
+    <section id="empty-view" class="empty-state" style="display:none">No listings found</section>
+    <section id="error-view" class="error-state" style="display:none">
+      Failed to load. Try again.
+      <button type="button" id="retry">Retry</button>
+    </section>
+    <section id="notifications-view" style="display:none">
+      <h1>Notifications</h1>
+      <div id="notif-list"></div>
+      <div id="notif-empty" class="empty-state" style="display:none">You're all caught up! 🎉</div>
+    </section>
+  </main>
+
+  <script>
+    const hamburger = document.getElementById('hamburger');
+    const menu = document.getElementById('mobile-menu');
+    const nav = document.getElementById('nav');
+
+    hamburger.addEventListener('click', () => {
+      const open = menu.classList.toggle('open');
+      hamburger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      hamburger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      hamburger.textContent = open ? '✕' : '☰';
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      if (!nav.contains(e.target) && menu.classList.contains('open')) {
+        menu.classList.remove('open');
+        hamburger.setAttribute('aria-expanded', 'false');
+        hamburger.setAttribute('aria-label', 'Open menu');
+        hamburger.textContent = '☰';
+      }
+    });
+
+    menu.querySelectorAll('a').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        menu.classList.remove('open');
+        hamburger.setAttribute('aria-expanded', 'false');
+        hamburger.setAttribute('aria-label', 'Open menu');
+        hamburger.textContent = '☰';
+      });
+    });
+
+    window.__setUnread = (n) => {
+      ['desktop-badge', 'mobile-badge'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (n > 0) {
+          el.style.display = 'flex';
+          el.textContent = n > 9 ? '9+' : String(n);
+        } else {
+          el.style.display = 'none';
+        }
+      });
+      const link = document.getElementById('mobile-notif-link');
+      link.textContent = n > 0 ? `Notifications (${n})` : 'Notifications';
+    };
+
+    window.__setLoggedIn = (yes) => {
+      nav.dataset.loggedIn = yes ? 'true' : 'false';
+      document.getElementById('desktop-bell').style.display = yes ? 'inline-flex' : 'none';
+      document.getElementById('mobile-bell').style.display = yes ? 'inline-flex' : 'none';
+    };
+
+    window.__showState = (state) => {
+      ['loading-view','content-view','empty-view','error-view','notifications-view'].forEach((id) => {
+        document.getElementById(id).style.display = 'none';
+      });
+      if (state === 'loading') document.getElementById('loading-view').style.display = 'grid';
+      if (state === 'content') document.getElementById('content-view').style.display = 'grid';
+      if (state === 'empty') document.getElementById('empty-view').style.display = 'block';
+      if (state === 'error') document.getElementById('error-view').style.display = 'block';
+      if (state === 'notifications') document.getElementById('notifications-view').style.display = 'block';
+    };
+
+    window.__setNotifications = (items) => {
+      window.__showState('notifications');
+      const list = document.getElementById('notif-list');
+      const empty = document.getElementById('notif-empty');
+      list.innerHTML = '';
+      if (!items.length) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      items.forEach((n) => {
+        const row = document.createElement('div');
+        row.className = 'notification-row ' + (n.is_read ? 'read' : 'unread');
+        row.innerHTML = `<strong>${n.title}</strong><p>${n.body || ''}</p>`;
+        list.appendChild(row);
+      });
+    };
+
+    // default: logged in, 3 unread
+    window.__setUnread(3);
+  </script>
+</body>
+</html>
