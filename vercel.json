@@ -1,18 +1,15 @@
 {
   "version": 2,
-  "regions": [
-    "sin1"
-  ],
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.12",
-      "maxDuration": 30
+  "builds": [
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/next"
     }
-  },
+  ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/api/index.py"
+      "dest": "frontend/$1"
     }
   ]
 }
