@@ -27,22 +27,38 @@ async def save_otp(db: AsyncSession, phone: str, otp: str):
 
 
 async def verify_otp_code(db: AsyncSession, phone: str, otp: str) -> bool:
-    """Verify OTP code is valid and not expired."""
+    """Verify OTP code is valid and not expired.
+
+    Tracks failed attempts per OTP record. After 5 wrong guesses the OTP is
+    invalidated (marked used) so it cannot be brute-forced within its window.
+    """
+    import hmac
+
     result = await db.execute(
         select(OTPCode).where(
             and_(
                 OTPCode.phone == phone,
-                OTPCode.code == otp,
                 OTPCode.used == False,
                 OTPCode.expires_at > datetime.now(timezone.utc),
             )
         ).order_by(OTPCode.created_at.desc()).limit(1)
     )
     otp_record = result.scalar_one_or_none()
-    if otp_record:
+    if not otp_record:
+        return False
+
+    if (otp_record.attempts or 0) >= 5:
+        return False
+
+    if hmac.compare_digest(str(otp_record.code), str(otp)):
         otp_record.used = True
         await db.flush()
         return True
+
+    otp_record.attempts = (otp_record.attempts or 0) + 1
+    if otp_record.attempts >= 5:
+        otp_record.used = True  # invalidate after too many guesses
+    await db.flush()
     return False
 
 

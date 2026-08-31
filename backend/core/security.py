@@ -1,7 +1,6 @@
 import jwt
 import bcrypt
-import random
-import string
+import secrets
 from datetime import datetime, timedelta, timezone
 from backend.core.config import settings
 
@@ -17,7 +16,11 @@ def decode_access_token(token: str) -> dict:
 
 
 def generate_otp(length: int = 6) -> str:
-    return "".join(random.choices(string.digits, k=length))
+    return f"{secrets.randbelow(10 ** length):0{length}d}"
+
+
+def generate_secure_token(nbytes: int = 32) -> str:
+    return secrets.token_urlsafe(nbytes)
 
 
 def hash_password(password: str) -> str:
@@ -25,4 +28,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    """Constant-time bcrypt verify. Returns False on invalid/malformed hash (fail-closed)."""
+    if not plain or not hashed:
+        return False
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except (ValueError, TypeError):
+        return False

@@ -8,7 +8,7 @@ from slowapi.util import get_remote_address
 
 from backend.core.config import settings
 from backend.db.dependencies import get_db
-from backend.core.security import generate_otp, create_access_token
+from backend.core.security import generate_otp, create_access_token, verify_password
 from backend.schemas.auth import SendOTPRequest, VerifyOTPRequest, TokenResponse, UserBrief, AdminLoginRequest, GoogleAuthRequest
 from backend.services.auth_service import send_otp_sms, save_otp, verify_otp_code, get_or_create_user, send_otp_email
 from sqlalchemy import select
@@ -59,17 +59,26 @@ async def send_otp(request: Request, body: SendOTPRequest, db: AsyncSession = De
             return {"message": "OTP sent", "dev_otp": otp}
         return {"message": "OTP sent"}
     except Exception as e:
-        logger.exception("Failed to send OTP")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in {__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Something went wrong. Please try again."
+        )
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
-async def verify_otp(body: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute", key_func=get_phone_key)
+async def verify_otp(request: Request, body: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
     """Verify OTP and return JWT token."""
     valid = await verify_otp_code(db, body.phone, body.otp)
     if not valid:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     user = await get_or_create_user(db, phone=body.phone, full_name=body.full_name)
+    if not getattr(user, "is_active", True):
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has been suspended. Contact support at support@roomsathi.in",
+        )
     token = create_access_token({"sub": str(user.id), "role": user.role})
     user_brief = UserBrief(
         id=user.id,
@@ -90,6 +99,11 @@ async def dev_login(body: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
     if settings.ENVIRONMENT != "development":
         raise HTTPException(status_code=403, detail="Not allowed in production environment")
     user = await get_or_create_user(db, phone=body.phone, full_name=body.full_name)
+    if not getattr(user, "is_active", True):
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has been suspended. Contact support at support@roomsathi.in",
+        )
     token = create_access_token({"sub": str(user.id), "role": user.role})
     user_brief = UserBrief(
         id=user.id,
@@ -105,7 +119,8 @@ async def dev_login(body: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/google", response_model=TokenResponse)
-async def google_login(body: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def google_login(request: Request, body: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
     """Login or register using a Google ID token. Verifies via Google tokeninfo API."""
     try:
         async with httpx.AsyncClient() as client:
@@ -148,6 +163,12 @@ async def google_login(body: GoogleAuthRequest, db: AsyncSession = Depends(get_d
         await db.flush()
         await db.refresh(user)
 
+    if not getattr(user, "is_active", True):
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has been suspended. Contact support at support@roomsathi.in",
+        )
+
     token = create_access_token({"sub": str(user.id), "role": user.role})
     user_brief = UserBrief(
         id=user.id,
@@ -171,8 +192,12 @@ async def admin_login(request: Request, body: AdminLoginRequest, db: AsyncSessio
     rate_info = admin_login_attempts[client_ip]
     if now < rate_info["lockout_until"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-        
-    if not settings.ADMIN_SECRET_PASSWORD or body.password != settings.ADMIN_SECRET_PASSWORD:
+
+    # ADMIN_SECRET_PASSWORD must be a bcrypt hash (see .env.example).
+    # verify_password is constant-time via bcrypt.checkpw; fail-closed on bad hash.
+    if not settings.ADMIN_SECRET_PASSWORD or not verify_password(
+        body.password, settings.ADMIN_SECRET_PASSWORD
+    ):
         rate_info["attempts"] += 1
         if rate_info["attempts"] >= 5:
             rate_info["lockout_until"] = now + 900  # 15 minutes
