@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { getListings, unlockContact, confirmUnlock } from "../lib/api";
 import ListingCard from "../components/ListingCard";
 import RazorpayModal from "../components/RazorpayModal";
+import { SkeletonListingGrid } from "../components/Skeleton";
 
 export default function HomePage() {
   const router = useRouter();
@@ -144,17 +145,21 @@ export default function HomePage() {
       )}
 
       {/* TOP BOOSTED LISTINGS */}
-      {featuredListings.length > 0 && (
+      {(loadingListings || featuredListings.length > 0) && (
         <section className="dashboard-section">
           <div className="section-header">
             <h2>⚡ Featured Properties</h2>
             <span className="section-subtitle">Top boosted postings in Pune</span>
           </div>
-          <div className="listings-grid">
-            {featuredListings.map(listing => (
-              <ListingCard key={listing.id} listing={listing} token={token} />
-            ))}
-          </div>
+          {loadingListings ? (
+            <SkeletonListingGrid count={3} />
+          ) : (
+            <div className="listings-grid">
+              {featuredListings.map(listing => (
+                <ListingCard key={listing.id} listing={listing} token={token} />
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -168,17 +173,7 @@ export default function HomePage() {
         {fetchError && <p className="error-text">{fetchError}</p>}
 
         {loadingListings ? (
-          <div className="skeleton-grid">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="skeleton-card card">
-                <div className="skeleton-image"></div>
-                <div className="skeleton-content">
-                  <div className="skeleton-line title"></div>
-                  <div className="skeleton-line text"></div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <SkeletonListingGrid count={6} />
         ) : recentListings.length > 0 ? (
           <div className="listings-grid">
             {recentListings.map(listing => (
@@ -335,40 +330,6 @@ export default function HomePage() {
         }
         .error-text {
           color: #dc2626;
-        }
-        /* Skeleton loaders */
-        .skeleton-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-          gap: 24px;
-        }
-        .skeleton-card {
-          padding: 0 !important;
-          overflow: hidden;
-        }
-        .skeleton-image {
-          aspect-ratio: 16/10;
-          background: #e5e7eb;
-          animation: pulse 1.5s infinite;
-        }
-        .skeleton-content {
-          padding: 16px;
-        }
-        .skeleton-line {
-          background: #e5e7eb;
-          height: 14px;
-          border-radius: 4px;
-          margin-bottom: 8px;
-          animation: pulse 1.5s infinite;
-        }
-        .skeleton-line.title {
-          width: 70%;
-          height: 18px;
-        }
-        @keyframes pulse {
-          0% { opacity: 0.6; }
-          50% { opacity: 0.9; }
-          100% { opacity: 0.6; }
         }
         .animate-fade {
           animation: fadeIn 0.25s ease-out;

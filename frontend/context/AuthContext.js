@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { getMe } from "../lib/api";
 import { getStoredToken, getStoredUser, setAuthStorage, clearAuthStorage } from "../lib/auth";
 
@@ -43,17 +43,17 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async ({ access_token, user }) => {
+  const login = useCallback(async ({ access_token, user }) => {
     setToken(access_token);
     setUser(user);
     setAuthStorage(access_token, user);
-  };
+  }, []);
 
-  const logout = () => {
-    setToken(null);
+  const logout = useCallback(() => {
     setUser(null);
+    setToken(null);
     clearAuthStorage();
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ token, user, loading, login, logout }}>

@@ -4,10 +4,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "jest",
+    "test:e2e": "playwright test --config=../playwright.config.js"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
+    "@sentry/nextjs": "^10.72.0",
     "next": "^16.2.7",
     "postcss": "^8.5.10",
     "react": "18.3.1",
@@ -17,5 +20,13 @@
     "next": {
       "postcss": "^8.5.10"
     }
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
+    "@playwright/test": "^1.62.1",
+    "babel-jest": "^30.5.0",
+    "jest": "^30.5.0",
+    "jest-environment-jsdom": "^30.5.0"
   }
 }

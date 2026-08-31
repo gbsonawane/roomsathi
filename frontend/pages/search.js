@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
 import { getListings, parseSearchQuery } from "../lib/api";
 import ListingCard from "../components/ListingCard";
+import { SkeletonListingGrid } from "../components/Skeleton";
 
 export default function SearchPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function SearchPage() {
 
   // Listings & UI status
   const [listings, setListings] = useState([]);
-  const [searching, setSearching] = useState(false);
+  const [searching, setSearching] = useState(true);
   const [error, setError] = useState("");
 
   // Redirect if not logged in
@@ -568,18 +569,7 @@ export default function SearchPage() {
 
             {/* Listings Grid */}
             {searching ? (
-              <div className="skeleton-grid">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="skeleton-card card">
-                    <div className="skeleton-image"></div>
-                    <div className="skeleton-content">
-                      <div className="skeleton-line title"></div>
-                      <div className="skeleton-line text"></div>
-                      <div className="skeleton-line pills"></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SkeletonListingGrid count={12} />
             ) : listings.length > 0 ? (
               <>
                 {viewMode === "list" ? (
@@ -842,48 +832,6 @@ export default function SearchPage() {
           max-width: 400px;
           margin-left: auto;
           margin-right: auto;
-        }
-        /* Skeleton loaders styling */
-        .skeleton-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-          gap: 20px;
-        }
-        .skeleton-card {
-          padding: 0 !important;
-          overflow: hidden;
-        }
-        .skeleton-image {
-          aspect-ratio: 16/10;
-          background: #e5e7eb;
-          animation: pulse 1.5s infinite;
-        }
-        .skeleton-content {
-          padding: 16px;
-        }
-        .skeleton-line {
-          background: #e5e7eb;
-          border-radius: 4px;
-          margin-bottom: 8px;
-          animation: pulse 1.5s infinite;
-        }
-        .skeleton-line.title {
-          height: 18px;
-          width: 70%;
-        }
-        .skeleton-line.text {
-          height: 12px;
-          width: 50%;
-        }
-        .skeleton-line.pills {
-          height: 14px;
-          width: 90%;
-          margin-top: 12px;
-        }
-        @keyframes pulse {
-          0% { opacity: 0.6; }
-          50% { opacity: 0.9; }
-          100% { opacity: 0.6; }
         }
         .nl-search-card {
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);

@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
 import ListingCard from "../components/ListingCard";
 import RazorpayModal from "../components/RazorpayModal";
+import { SkeletonListingGrid } from "../components/Skeleton";
 import { 
   getOwnerListings, 
   getSavedListings, 
@@ -24,7 +25,7 @@ export default function ProfilePage() {
   const [payments, setPayments] = useState([]);
 
   // UI state
-  const [loadingData, setLoadingData] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState("");
 
   // Boost payment state
@@ -187,9 +188,7 @@ export default function ProfilePage() {
           )}
 
           {loadingData ? (
-            <div style={{ textAlign: "center", padding: "30px 0" }}>
-              <p>Loading items...</p>
-            </div>
+            <SkeletonListingGrid count={3} />
           ) : (
             <div>
               

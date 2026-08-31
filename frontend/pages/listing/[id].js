@@ -12,6 +12,7 @@ import {
   confirmBoost,
   chatWithAssistant
 } from "../../lib/api";
+import { SkeletonLine } from "../../components/Skeleton";
 
 export default function ListingDetailPage() {
   const router = useRouter();
@@ -250,8 +251,13 @@ export default function ListingDetailPage() {
 
   if (loadingListing) {
     return (
-      <div style={{ textAlign: "center", padding: "48px 0" }}>
-        <h2>Loading property details...</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "8px 0" }}>
+        <SkeletonLine height="300px" style={{ borderRadius: "12px" }} />
+        <SkeletonLine width="60%" height="28px" />
+        <SkeletonLine width="40%" height="20px" />
+        <SkeletonLine width="90%" height="16px" />
+        <SkeletonLine width="80%" height="16px" />
+        <SkeletonLine width="70%" height="16px" />
       </div>
     );
   }

@@ -1,3 +1,5 @@
+@import url("https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.0/tabler-icons.min.css");
+
 html,
 body {
   padding: 0;
@@ -152,4 +154,77 @@ label {
 
 .link-button:hover {
   transform: translateY(-1px);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+[data-mode="dark"] .skeleton-shimmer,
+[data-mode="dark"] .shimmer-bg {
+  background: linear-gradient(90deg, #2a2a2a 25%, #333 50%, #2a2a2a 75%) !important;
+  background-size: 200% 100% !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shimmer-bg {
+    background: linear-gradient(90deg, #2a2a2a 25%, #333 50%, #2a2a2a 75%);
+    background-size: 200% 100%;
+  }
+}
+
+.desktop-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hamburger-btn {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .desktop-nav {
+    display: none !important;
+  }
+
+  .hamburger-btn {
+    display: block !important;
+  }
+
+  /* Prevent horizontal scroll */
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Make listing grids single column */
+  .listings-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Full width cards */
+  .card {
+    margin: 0 0 12px;
+    border-radius: 8px;
+  }
+
+  /* Fix create-listing form steps */
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Fix search filters */
+  .filters-aside {
+    width: 100% !important;
+  }
+
+  /* Fix map height on mobile */
+  .map-container {
+    height: 320px !important;
+  }
 }

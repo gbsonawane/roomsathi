@@ -24,6 +24,12 @@ export default function LoginPage() {
     }
   }, [user, loading, router, nextUrl]);
 
+  useEffect(() => {
+    if (router.query.reason === "session_expired") {
+      setError("Your session expired. Please log in again.");
+    }
+  }, [router.query]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
