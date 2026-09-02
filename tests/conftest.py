@@ -21,6 +21,10 @@ from httpx import AsyncClient, ASGITransport
 from backend.main import app
 from backend.db.dependencies import get_db, get_current_user, get_current_user_optional
 from backend.core.security import create_access_token
+from backend.core.config import settings
+
+# Tests expect console OTP (dev_otp); never hit real SMTP from local .env
+settings.EMAIL_PROVIDER = "dev"
 
 # ── In-memory SQLite engine (no PostgreSQL needed) ─────────────────────────
 # We use aiosqlite and render_as_batch to handle all migrations in-memory.

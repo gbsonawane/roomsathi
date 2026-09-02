@@ -45,25 +45,30 @@ async def get_phone_key(request: Request) -> str:
 @router.post("/send-otp")
 @limiter.limit("3/10 minutes", key_func=get_phone_key)
 async def send_otp(request: Request, body: SendOTPRequest, db: AsyncSession = Depends(get_db)):
-    """Send OTP to the provided phone number."""
+    """Send OTP to the provided phone number or email."""
     try:
         otp = generate_otp()
         await save_otp(db, body.phone, otp)
-        
+
         if "@" in body.phone:
             await send_otp_email(body.phone, otp)
         else:
             await send_otp_sms(body.phone, otp)
-            
-        if settings.ENVIRONMENT == "development":
+
+        # Only expose OTP in true console/dev email mode — never when SMTP is used
+        if settings.ENVIRONMENT == "development" and settings.EMAIL_PROVIDER.lower() == "dev":
             return {"message": "OTP sent", "dev_otp": otp}
         return {"message": "OTP sent"}
+    except RuntimeError as e:
+        logger.error(f"OTP delivery failed: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Error in {__name__}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Something went wrong. Please try again."
         )
+
 
 
 @router.post("/verify-otp", response_model=TokenResponse)

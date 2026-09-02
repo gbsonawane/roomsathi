@@ -197,29 +197,45 @@ async def send_otp_sms(phone: str, otp: str):
         logger.info(f"[DEV MODE] OTP for {clean_phone}: {otp}")
 
 
+def _smtp_credentials_look_placeholder() -> bool:
+    user = (settings.SMTP_USERNAME or "").strip().lower()
+    password = (settings.SMTP_PASSWORD or "").strip().lower()
+    placeholders = ("your_email", "example.com", "your_smtp", "changeme", "password")
+    if not user or not password:
+        return True
+    return any(p in user or p in password for p in placeholders)
+
+
 async def send_otp_email(email: str, otp: str):
     """Send OTP via email. Supports dev and smtp modes."""
     provider = settings.EMAIL_PROVIDER.lower()
-    
+
     if provider == "dev":
         logger.info(f"[DEV MODE] Email OTP for {email}: {otp}")
         print(f"\n{'='*40}")
         print(f"  [DEV MODE] Email OTP for {email}: {otp}")
         print(f"{'='*40}\n")
         return
-        
-    elif provider == "smtp":
-        if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
-            logger.error("SMTP credentials are not configured.")
-            return
-            
-        def send_sync():
-            msg = MIMEMultipart()
-            msg['From'] = settings.EMAIL_FROM or settings.SMTP_USERNAME
-            msg['To'] = email
-            msg['Subject'] = f"RoomSathi Verification Code: {otp}"
-            
-            body = f"""
+
+    if provider != "smtp":
+        raise RuntimeError(
+            f"Unknown EMAIL_PROVIDER '{settings.EMAIL_PROVIDER}'. Use 'smtp' or 'dev'."
+        )
+
+    if _smtp_credentials_look_placeholder():
+        raise RuntimeError(
+            "Email OTP is not configured. Set real SMTP_USERNAME and SMTP_PASSWORD "
+            "in .env (for Gmail: use an App Password from "
+            "https://myaccount.google.com/apppasswords) and EMAIL_PROVIDER=smtp."
+        )
+
+    def send_sync():
+        msg = MIMEMultipart()
+        msg["From"] = settings.EMAIL_FROM or settings.SMTP_USERNAME
+        msg["To"] = email
+        msg["Subject"] = f"RoomSathi Verification Code: {otp}"
+
+        body = f"""
             <html>
                 <body style="font-family: Arial, sans-serif; background-color: #F8FAFC; padding: 20px;">
                     <div style="max-width: 480px; margin: 0 auto; background: #FFFFFF; border-radius: 8px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
@@ -236,24 +252,25 @@ async def send_otp_email(email: str, otp: str):
                 </body>
             </html>
             """
-            msg.attach(MIMEText(body, 'html'))
-            
-            try:
-                if settings.SMTP_PORT == 465:
-                    server = smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT)
-                else:
-                    server = smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT)
-                    server.starttls()
-                    
-                server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-                server.sendmail(msg['From'], email, msg.as_string())
-                server.quit()
-                logger.info(f"Email OTP sent successfully to {email}")
-            except Exception as smtp_err:
-                logger.error(f"Failed to send email OTP: {smtp_err}")
-                raise smtp_err
+        msg.attach(MIMEText(body, "html"))
 
-        try:
-            await asyncio.to_thread(send_sync)
-        except Exception as e:
-            logger.error(f"Error during email send thread execution: {str(e)}")
+        if settings.SMTP_PORT == 465:
+            server = smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=20)
+        else:
+            server = smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=20)
+            server.starttls()
+
+        # Gmail app passwords are often copied with spaces — strip them
+        password = (settings.SMTP_PASSWORD or "").replace(" ", "")
+        server.login(settings.SMTP_USERNAME, password)
+        server.sendmail(msg["From"], email, msg.as_string())
+        server.quit()
+        logger.info(f"Email OTP sent successfully to {email}")
+
+    try:
+        await asyncio.to_thread(send_sync)
+    except Exception as e:
+        logger.error(f"Failed to send email OTP to {email}: {e}", exc_info=True)
+        raise RuntimeError(
+            "Could not send OTP email. Check SMTP credentials / App Password and try again."
+        ) from e

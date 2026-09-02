@@ -31,6 +31,35 @@ const nextConfig = {
     ],
   },
   async headers() {
+    const apiUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || "";
+    // Next.js webpack/HMR needs eval + websockets in development; without
+    // them the FOUC hide (body{display:none}) never clears → blank screen.
+    const scriptSrc = [
+      "'self'",
+      "'unsafe-inline'",
+      !isProd ? "'unsafe-eval'" : "",
+      "https://checkout.razorpay.com",
+      "https://accounts.google.com",
+      "https://maps.googleapis.com",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const connectSrc = [
+      "'self'",
+      "https://api.razorpay.com",
+      "https://maps.googleapis.com",
+      "https://accounts.google.com",
+      "https://*.sentry.io",
+      apiUrl,
+      // Local API during development (explicit host variants)
+      !isProd ? "http://localhost:8000" : "",
+      !isProd ? "http://127.0.0.1:8000" : "",
+      !isProd ? "ws: wss:" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     return [
       {
         source: "/(.*)",
@@ -46,8 +75,11 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://accounts.google.com",
-              "connect-src 'self' https://api.razorpay.com",
+              `script-src ${scriptSrc}`,
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+              "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:",
+              "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://*.amazonaws.com https://cdn-icons-png.flaticon.com",
+              `connect-src ${connectSrc}`,
               "frame-src https://checkout.razorpay.com https://accounts.google.com",
             ].join("; "),
           },
@@ -59,6 +91,6 @@ const nextConfig = {
 
 export default withSentryConfig(nextConfig, {
   silent: true,
-  org: "roomsathi",
-  project: "roomsathi-frontend",
+  telemetry: false,
+  hideSourceMaps: true,
 });
